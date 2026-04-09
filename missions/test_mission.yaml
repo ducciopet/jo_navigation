@@ -1,0 +1,46 @@
+# GPS Waypoint Mission File
+# ─────────────────────────
+# Define named points with their GPS coordinates in the 'points' section.
+# Then list which points to visit (and in what order) in the 'mission' section.
+# Points can appear multiple times in the mission (e.g. returning to 'home').
+# 'alt' is optional and defaults to 0.0 if omitted.
+
+points:
+  crosslab_door:
+    lat: 43.68512948
+    lon: 10.48694045
+
+  w1:
+    lat: 43.68512113
+    lon: 10.48698992
+
+  w2:
+    lat: 43.68515932
+    lon: 10.48700340
+
+  w3:
+    lat: 43.68520914
+    lon: 10.48701803
+
+  w4:
+    lat: 43.68529057
+    lon: 10.68529057
+
+  crosslab_door_back:
+    lat: 43.68508012
+    lon: 10.48697062
+
+  back_street:
+    lat: 43.68506762
+    lon: 10.48712851
+
+
+    
+
+mission:
+  - crosslab_door_back
+  - w1
+  - w2
+  - w3
+  - w4
+  - crosslab_door_back

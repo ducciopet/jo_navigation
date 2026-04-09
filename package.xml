@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+
+<package format="3">
+
+  <name>jo_navigation</name>
+  <version>1.0.13</version>
+  <description>Jo Navigation Package</description>
+
+  <license>BSD-3</license>
+
+  <maintainer email="michele.lisi@phd.unipi.it">Michele Lisi</maintainer>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <depend>nav2_msgs</depend>
+  <depend>sensor_msgs</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+
+</package>

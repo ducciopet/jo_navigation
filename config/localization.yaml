@@ -1,0 +1,34 @@
+ekf_filter_node:
+  ros__parameters:
+    frequency: 60.0
+    two_d_mode: true
+    publish_acceleration: true
+    publish_tf: true
+
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: odom
+
+    debug: true
+
+    odom0: glim_ros/odom_corrected
+    odom0_config: [true, true, true,   # x, y, z — don't fuse absolute position
+                   true, true, true,   # roll, pitch, yaw
+                   true,  false, false,   # vx only (tracked vehicle, no lateral)
+                   false, false, true,    # vyaw
+                   false, false, false]   # accelerations
+    odom0_relative: false
+    odom0_differential: false
+    
+
+    imu0: imu/data
+    imu0_config: [false, false, false,
+                  false, false, false,   # don't fuse orientation, GLIM handles that
+                  true, true, false,
+                  false, false, true,    # fuse only vyaw from IMU
+                  false, false, false]
+    imu0_differential: false
+    imu0_relative: false
+    imu0_remove_gravitational_acceleration: true
+    imu0_queue_size: 10
