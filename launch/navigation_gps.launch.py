@@ -268,13 +268,6 @@ def generate_launch_description():
                              'node_names': lifecycle_nodes}]),
         ],
     )
-
-
-
-    
-
-
-
     
 
 
@@ -291,10 +284,5 @@ def generate_launch_description():
         declare_log_level_cmd,
         load_nodes,
         load_composable_nodes,
-        rviz,
-        robot_localization_local,
-        navsat_transform_node,
-        robot_localization_global,       
-        set_zone,
-        static_map
+        rviz
     ])
