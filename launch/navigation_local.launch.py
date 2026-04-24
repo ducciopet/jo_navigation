@@ -78,9 +78,11 @@ def generate_launch_description():
     )
 
     # Create our own temporary YAML files that include substitutions
+    bt_xml = os.path.join(bringup_dir, 'behavior_trees', 'navigate_dynamic.xml')
     param_substitutions = {
         'use_sim_time': use_sim_time,
-        'autostart': autostart}
+        'autostart': autostart,
+        'default_nav_to_pose_bt_xml': bt_xml}
 
     configured_params = RewrittenYaml(
             source_file=params_file,
@@ -269,6 +271,14 @@ def generate_launch_description():
     )  
 
 
+    lidar_dynamic_filter = Node(
+        package='jo_sim',
+        executable='lidar_dynamic_filter',
+        name='lidar_dynamic_filter',
+        output='screen',
+        parameters=[{'use_sim_time': use_sim_time}],
+    )
+
     return LaunchDescription([
         rviz_arg,
         stdout_linebuf_envvar,
@@ -280,6 +290,7 @@ def generate_launch_description():
         declare_container_name_cmd,
         declare_use_respawn_cmd,
         declare_log_level_cmd,
+        lidar_dynamic_filter,
         load_nodes,
         load_composable_nodes,
         rviz,

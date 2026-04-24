@@ -1,0 +1,66 @@
+<?xml version="1.0"?>
+<!--
+  navigate_dynamic.xml
+  Based on Nav2's navigate_to_pose_w_replanning_and_recovery.xml with two changes:
+    1. RateController at 2 Hz instead of 1 Hz → fresher path around moving obstacles.
+    2. IsPathValid check before FollowPath → if the current path becomes LETHAL
+       (e.g. turtlebot crossed it), FollowPath is pre-empted immediately and the
+       RateController triggers a new ComputePathToPose on its next tick.
+-->
+<root BTCPP_format="4">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="6" name="NavigateRecovery">
+
+      <PipelineSequence name="NavigateWithReplanning">
+
+        <!-- Replan at 2 Hz; clear global costmap once on failure -->
+        <RateController hz="2.0">
+          <RecoveryNode number_of_retries="1" name="ComputePathRecovery">
+            <ComputePathToPose goal="{goal}" path="{path}"
+                               planner_id="GridBased"
+                               error_code_id="{compute_path_error_code}"/>
+            <ReactiveFallback name="ComputePathRecoveryFallback">
+              <GoalUpdated/>
+              <ClearEntireCostmap name="ClearGlobalCostmap-Context"
+                service_name="global_costmap/clear_entirely_global_costmap"/>
+            </ReactiveFallback>
+          </RecoveryNode>
+        </RateController>
+
+        <!-- Follow path; pre-empt immediately if path becomes invalid -->
+        <RecoveryNode number_of_retries="1" name="FollowPathRecovery">
+          <ReactiveSequence name="FollowWithPathCheck">
+            <!-- Fails → ReactiveSequence fails → PipelineSequence re-ticks RateController -->
+            <IsPathValid path="{path}"/>
+            <FollowPath path="{path}" controller_id="FollowPath"
+                        error_code_id="{follow_path_error_code}"/>
+          </ReactiveSequence>
+          <ReactiveFallback name="FollowPathRecoveryFallback">
+            <GoalUpdated/>
+            <ClearEntireCostmap name="ClearLocalCostmap-Context"
+              service_name="local_costmap/clear_entirely_local_costmap"/>
+          </ReactiveFallback>
+        </RecoveryNode>
+
+      </PipelineSequence>
+
+      <!-- Global recovery when the whole sequence fails repeatedly -->
+      <ReactiveFallback>
+        <GoalUpdated/>
+        <RoundRobin name="RecoveryActions">
+          <Sequence name="ClearingActions">
+            <ClearEntireCostmap name="ClearLocalCostmap-Subtree"
+              service_name="local_costmap/clear_entirely_local_costmap"/>
+            <ClearEntireCostmap name="ClearGlobalCostmap-Subtree"
+              service_name="global_costmap/clear_entirely_global_costmap"/>
+          </Sequence>
+          <Spin spin_dist="1.57" error_code_id="{spin_error_code}"/>
+          <Wait wait_duration="5.0"/>
+          <BackUp backup_dist="0.30" backup_speed="0.05"
+                  error_code_id="{backup_error_code}"/>
+        </RoundRobin>
+      </ReactiveFallback>
+
+    </RecoveryNode>
+  </BehaviorTree>
+</root>
