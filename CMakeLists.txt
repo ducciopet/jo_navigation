@@ -5,7 +5,7 @@ find_package(ament_cmake)
 
 
 install(
-  DIRECTORY config launch rviz missions
+  DIRECTORY config launch rviz missions behavior_trees
   DESTINATION share/${PROJECT_NAME}
 )
 

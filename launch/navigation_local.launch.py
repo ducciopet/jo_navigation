@@ -269,6 +269,14 @@ def generate_launch_description():
     )  
 
 
+    lidar_dynamic_filter = Node(
+        package='jo_sim',
+        executable='lidar_dynamic_filter',
+        name='lidar_dynamic_filter',
+        output='screen',
+        parameters=[{'use_sim_time': use_sim_time}],
+    )
+
     return LaunchDescription([
         rviz_arg,
         stdout_linebuf_envvar,
@@ -280,6 +288,7 @@ def generate_launch_description():
         declare_container_name_cmd,
         declare_use_respawn_cmd,
         declare_log_level_cmd,
+        lidar_dynamic_filter,
         load_nodes,
         load_composable_nodes,
         rviz,
