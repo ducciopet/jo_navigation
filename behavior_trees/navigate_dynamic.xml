@@ -8,7 +8,7 @@
        RateController triggers a new ComputePathToPose on its next tick.
 -->
 <root BTCPP_format="4">
-  <BehaviorTree ID="NavigateToPose">
+  <BehaviorTree ID="MainTree">
     <RecoveryNode number_of_retries="6" name="NavigateRecovery">
 
       <PipelineSequence name="NavigateWithReplanning">
