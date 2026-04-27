@@ -8,7 +8,6 @@ bt_navigator:
     default_server_timeout: 20
     default_nav_to_pose_bt_xml: ""
 
-
 bt_navigator_navigate_through_poses_rclcpp_node:
   ros__parameters:
     use_sim_time: True
