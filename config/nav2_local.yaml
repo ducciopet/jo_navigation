@@ -237,6 +237,11 @@ waypoint_follower:
       enabled: True
       waypoint_pause_duration: 200
 
+lidar_dynamic_filter:
+  ros__parameters:
+    tracking_timeout: 1.0   # s — se non arrivano messaggi, il lidar passa invariato
+    filter_margin: 0.1      # m extra per ogni semiasse del box 3D (x, y, z)
+
 velocity_smoother:
   ros__parameters:
     use_sim_time: True

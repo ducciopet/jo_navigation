@@ -276,7 +276,7 @@ def generate_launch_description():
         executable='lidar_dynamic_filter',
         name='lidar_dynamic_filter',
         output='screen',
-        parameters=[{'use_sim_time': use_sim_time}],
+        parameters=[configured_params],
     )
 
     return LaunchDescription([
