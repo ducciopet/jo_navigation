@@ -78,11 +78,11 @@ def generate_launch_description():
     )
 
     # Create our own temporary YAML files that include substitutions
-    bt_xml = os.path.join(bringup_dir, 'behavior_trees', 'navigate_to_pose_w_replanning_and_recovery.xml')
+    # default_nav_to_pose_bt_xml is left as "" in nav2_local.yaml so
+    # nav2_bt_navigator falls back to its own installed default BT.
     param_substitutions = {
         'use_sim_time': use_sim_time,
-        'autostart': autostart,
-        'default_nav_to_pose_bt_xml': bt_xml}
+        'autostart': autostart}
 
     configured_params = RewrittenYaml(
             source_file=params_file,
