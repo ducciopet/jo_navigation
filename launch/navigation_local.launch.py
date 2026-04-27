@@ -78,7 +78,7 @@ def generate_launch_description():
     )
 
     # Create our own temporary YAML files that include substitutions
-    bt_xml = os.path.join(bringup_dir, 'behavior_trees', 'navigate_dynamic.xml')
+    bt_xml = os.path.join(bringup_dir, 'behavior_trees', 'navigate_to_pose_w_replanning_and_recovery.xml')
     param_substitutions = {
         'use_sim_time': use_sim_time,
         'autostart': autostart,
