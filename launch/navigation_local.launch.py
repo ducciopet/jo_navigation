@@ -275,7 +275,7 @@ def generate_launch_description():
 
 
     lidar_dynamic_filter = Node(
-        package='jo_sim',
+        package='jo_navigation',
         executable='lidar_dynamic_filter',
         name='lidar_dynamic_filter',
         output='screen',
