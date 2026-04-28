@@ -70,23 +70,27 @@ local_costmap:
       robot_base_frame: base_link
       use_sim_time: True
       rolling_window: true
-      width: 40
-      height: 40
-      transform_tolerance: 2.0  # Lookahead tolerance
-      buffer_duration: 60.0     # Keep 60 seconds of transform history
+      width: 20
+      height: 20
+      transform_tolerance: 2.0
       resolution: 0.05
       robot_radius: 0.52
       plugins: ["voxel_layer", "dynamic_obstacle_layer", "inflation_layer"]
-      inflation_layer:
-        plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 1.2
+
       dynamic_obstacle_layer:
         plugin: "jo_sim::DynamicObstacleLayer"
         enabled: True
-        tracking_timeout: 1.0      # seconds before considering tracking lost
-        velocity_inflation_k: 2.0  # costmap extends by k*speed metres in velocity direction
-        velocity_inflation_min: 0.05  # m/s threshold below which no inflation is applied
+        obstacle_padding: 0.10
+        tracking_timeout: 0.5
+        velocity_inflation_k: 1.5
+        velocity_inflation_min: 0.15
+        prediction_cost: 220
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 4.0
+        inflation_radius: 0.8
+
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: True
@@ -107,20 +111,18 @@ local_costmap:
           raytrace_min_range: 0.0
           obstacle_max_range: 10.0
           obstacle_min_range: 0.0
-      static_layer:
-        plugin: "nav2_costmap_2d::StaticLayer"
-        map_subscribe_transient_local: True
+
       always_send_full_costmap: True
+
 
 global_costmap:
   global_costmap:
     ros__parameters:
-      update_frequency: 10.0
+      update_frequency: 2.0
       publish_frequency: 1.0
       global_frame: odom
       robot_base_frame: base_link
-      transform_tolerance: 1.0  # Lookahead tolerance
-      buffer_duration: 60.0     # Keep 60 seconds of transform history
+      transform_tolerance: 1.0
       use_sim_time: True
       robot_radius: 0.52
       resolution: 0.05
@@ -128,20 +130,15 @@ global_costmap:
       rolling_window: true
       width: 40
       height: 40
-      plugins: ["obstacle_layer", "dynamic_obstacle_layer", "inflation_layer"]
-      dynamic_obstacle_layer:
-        plugin: "jo_sim::DynamicObstacleLayer"
-        enabled: True
-        tracking_timeout: 1.0
-        velocity_inflation_k: 2.0
-        velocity_inflation_min: 0.05
+      plugins: ["obstacle_layer", "inflation_layer"]
+
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
         observation_sources: scan
         scan:
           topic: /velodyne_points_filtered
-          max_obstacle_height: 2.0
+          max_obstacle_height: 3.0
           clearing: True
           marking: True
           data_type: "PointCloud2"
@@ -149,111 +146,16 @@ global_costmap:
           raytrace_min_range: 0.0
           obstacle_max_range: 10.0
           obstacle_min_range: 0.0
-      # static_layer:
-      #   plugin: "nav2_costmap_2d::StaticLayer"
-      #   map_subscribe_transient_local: True
+
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 1.2
+        inflation_radius: 1.0
+
       always_send_full_costmap: True
 
-map_server:
-  ros__parameters:
-    use_sim_time: True
-    # Overridden in launch by the "map" launch configuration or provided default value.
-    # To use in yaml, remove the default "map" value in the tb3_simulation_launch.py file & provide full path to map below.
-    yaml_filename: ""
-
-map_saver:
-  ros__parameters:
-    use_sim_time: True
-    save_map_timeout: 5.0
-    free_thresh_default: 0.25
-    occupied_thresh_default: 0.65
-    map_subscribe_transient_local: True
-
-planner_server:
-  ros__parameters:
-    expected_planner_frequency: 5.0
-    allow_partial_planning: True
-    planner_patience: 15.0
-    use_sim_time: True
-    planner_plugins: ["GridBased"]
-    GridBased:
-      plugin: "nav2_navfn_planner::NavfnPlanner"
-      tolerance: 0.1
-      use_astar: true
-      allow_unknown: true
-
-smoother_server:
-  ros__parameters:
-    use_sim_time: True
-    smoother_plugins: ["simple_smoother"]
-    simple_smoother:
-      plugin: "nav2_smoother::SimpleSmoother"
-      tolerance: 1.0e-10
-      max_its: 1000
-      do_refinement: True
-
-behavior_server:
-  ros__parameters:
-    costmap_topic: local_costmap/costmap_raw
-    footprint_topic: local_costmap/published_footprint
-    cycle_frequency: 20.0
-    behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait"]
-    spin:
-      plugin: "nav2_behaviors::Spin"
-    backup:
-      plugin: "nav2_behaviors::BackUp"
-    drive_on_heading:
-      plugin: "nav2_behaviors::DriveOnHeading"
-    wait:
-      plugin: "nav2_behaviors::Wait"
-    assisted_teleop:
-      plugin: "nav2_behaviors::AssistedTeleop"
-    global_frame: odom
-    robot_base_frame: base_link
-    transform_tolerance: 1.1
-    use_sim_time: True
-    simulate_ahead_time: 5.0
-    max_rotational_vel: 1.0
-    min_rotational_vel: 0.4
-    rotational_acc_lim: 3.2
-
-robot_state_publisher:
-  ros__parameters:
-    use_sim_time: True
-
-waypoint_follower:
-  ros__parameters:
-    use_sim_time: True
-    loop_rate: 20
-    stop_on_failure: false
-    waypoint_task_executor_plugin: "wait_at_waypoint"
-    wait_at_waypoint:
-      plugin: "nav2_waypoint_follower::WaitAtWaypoint"
-      enabled: True
-      waypoint_pause_duration: 200
 
 lidar_dynamic_filter:
   ros__parameters:
-    tracking_timeout: 1.0   # s — se non arrivano messaggi, il lidar passa invariato
-    filter_margin: 0.1      # m extra per ogni semiasse del box 3D (x, y, z)
-
-velocity_smoother:
-  ros__parameters:
-    use_sim_time: True
-    smoothing_frequency: 20.0
-    scale_velocities: False
-    feedback: "OPEN_LOOP"
-    max_velocity: [0.56, 0.0, 1.0]
-    min_velocity: [-0.26, 0.0, -1.0]
-    max_accel: [2.5, 0.0, 3.2]
-    max_decel: [-2.5, 0.0, -3.2]
-    odom_topic: "/odometry/filtered"
-    odom_duration: 0.1
-    deadband_velocity: [0.0, 0.0, 0.0]
-    velocity_timeout: 1.0
-
-    
+    tracking_timeout: 0.5
+    obstacle_padding: 0.5

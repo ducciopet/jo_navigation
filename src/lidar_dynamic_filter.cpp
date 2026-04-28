@@ -6,178 +6,204 @@
 #include <string>
 #include <vector>
 
-#include "geometry_msgs/msg/point_stamped.hpp"
 #include "jo_msgs/msg/obstacle_array.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
+
+#include "tf2/LinearMath/Transform.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_listener.h"
-
-using namespace std::chrono_literals;
-
-// ── node ─────────────────────────────────────────────────────────────────────
 
 class LidarDynamicFilter : public rclcpp::Node
 {
 public:
   LidarDynamicFilter()
   : Node("lidar_dynamic_filter"),
-    tf_buf_(get_clock()),
-    tf_listener_(tf_buf_)
+    tf_buffer_(get_clock()),
+    tf_listener_(tf_buffer_)
   {
-    declare_parameter("tracking_timeout", 1.0);  // s — if lost, pass LiDAR unfiltered
-    declare_parameter("filter_margin",    0.1);  // extra half-extent along each axis (m)
+    declare_parameter("tracking_timeout", 0.5);
+    declare_parameter("obstacle_padding", 0.10);
 
     pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
       "/velodyne_points_filtered", 10);
 
     obs_sub_ = create_subscription<jo_msgs::msg::ObstacleArray>(
-      "/onboard_detector/tracked_dynamic_obstacles", 10,
-      std::bind(&LidarDynamicFilter::obs_cb, this, std::placeholders::_1));
+      "/onboard_detector/tracked_dynamic_obstacles",
+      10,
+      std::bind(&LidarDynamicFilter::obstaclesCallback, this, std::placeholders::_1));
 
     lidar_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
-      "/velodyne_points", 10,
-      std::bind(&LidarDynamicFilter::scan_cb, this, std::placeholders::_1));
+      "/velodyne_points",
+      10,
+      std::bind(&LidarDynamicFilter::lidarCallback, this, std::placeholders::_1));
   }
 
 private:
-  // Obstacle stored in its source frame (odom). The message uses an AABB
-  // (identity orientation), so no rotation is needed for the box check.
   struct ObsBox
   {
-    double x, y, z;    // centre in obs_frame
-    double hx, hy, hz; // half-extents + margin
+    double x;
+    double y;
+    double z;
+    double hx;
+    double hy;
+    double hz;
   };
 
-  // Obstacle centre expressed in the lidar sensor frame, ready for AABB test.
-  struct ObsBoxLidar
+  void obstaclesCallback(const jo_msgs::msg::ObstacleArray::SharedPtr msg)
   {
-    double x, y, z;
-    double hx, hy, hz;
-  };
+    std::lock_guard<std::mutex> lock(mutex_);
 
-  void obs_cb(const jo_msgs::msg::ObstacleArray::SharedPtr msg)
-  {
-    std::lock_guard<std::mutex> lk(mtx_);
-    last_recv_ = now();
-    obs_.clear();
-    obs_frame_ = msg->header.frame_id;
-    const double m = get_parameter("filter_margin").as_double();
-    for (const auto & o : msg->obstacles) {
-      obs_.push_back({
-        o.pose.position.x,
-        o.pose.position.y,
-        o.pose.position.z,
-        o.size.x * 0.5 + m,
-        o.size.y * 0.5 + m,
-        o.size.z * 0.5 + m
-      });
+    latest_obstacles_.clear();
+    latest_frame_ = msg->header.frame_id;
+    last_obstacles_time_ = now();
+
+    const double padding = get_parameter("obstacle_padding").as_double();
+
+    for (const auto & obs : msg->obstacles) {
+      ObsBox box;
+      box.x = obs.pose.position.x;
+      box.y = obs.pose.position.y;
+      box.z = obs.pose.position.z;
+
+      box.hx = obs.size.x * 0.5 + padding;
+      box.hy = obs.size.y * 0.5 + padding;
+      box.hz = obs.size.z * 0.5 + padding;
+
+      latest_obstacles_.push_back(box);
     }
   }
 
-  void scan_cb(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
+  void lidarCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
   {
-    double timeout;
-    bool active;
-    std::vector<ObsBox> local_obs;
-    std::string obs_frame;
+    std::vector<ObsBox> obstacles;
+    std::string obstacle_frame;
+    bool active = false;
+
     {
-      std::lock_guard<std::mutex> lk(mtx_);
-      timeout  = get_parameter("tracking_timeout").as_double();
-      active   = last_recv_.has_value() &&
-        (now() - *last_recv_).seconds() < timeout;
+      std::lock_guard<std::mutex> lock(mutex_);
+
+      const double timeout = get_parameter("tracking_timeout").as_double();
+
+      active =
+        last_obstacles_time_.has_value() &&
+        (now() - *last_obstacles_time_).seconds() < timeout &&
+        !latest_obstacles_.empty();
+
       if (active) {
-        local_obs = obs_;
-        obs_frame = obs_frame_;
+        obstacles = latest_obstacles_;
+        obstacle_frame = latest_frame_;
       }
     }
 
-    if (!active || local_obs.empty()) {
+    if (!active) {
       pub_->publish(*msg);
       return;
     }
 
-    const std::string & lidar_frame = msg->header.frame_id;
-    const rclcpp::Time t0(0, 0, get_clock()->get_clock_type());
-
-    // Transform each obstacle centre from odom to lidar frame (one point per
-    // obstacle, not per LiDAR return).  The box is AABB so no rotation needed.
-    std::vector<ObsBoxLidar> obs_lidar;
-    obs_lidar.reserve(local_obs.size());
-    for (const auto & o : local_obs) {
-      geometry_msgs::msg::PointStamped pin, pout;
-      pin.header.frame_id = obs_frame;
-      pin.header.stamp    = t0;
-      pin.point.x = o.x;
-      pin.point.y = o.y;
-      pin.point.z = o.z;
-      try {
-        tf_buf_.transform(pin, pout, lidar_frame, tf2::durationFromSec(0.05));
-      } catch (const tf2::TransformException & ex) {
-        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
-          "TF not ready yet, passing LiDAR unfiltered: %s", ex.what());
-        pub_->publish(*msg);
-        return;
-      }
-      obs_lidar.push_back({pout.point.x, pout.point.y, pout.point.z,
-                            o.hx, o.hy, o.hz});
-    }
-
-    // Locate x/y/z field offsets in the point layout.
-    int x_off = -1, y_off = -1, z_off = -1;
-    for (const auto & f : msg->fields) {
-      if (f.name == "x") {x_off = static_cast<int>(f.offset);}
-      if (f.name == "y") {y_off = static_cast<int>(f.offset);}
-      if (f.name == "z") {z_off = static_cast<int>(f.offset);}
-    }
-    if (x_off < 0 || y_off < 0) {
+    if (obstacle_frame.empty()) {
       pub_->publish(*msg);
       return;
     }
 
-    // Copy points that do not fall inside any obstacle AABB.
-    const uint32_t ps   = msg->point_step;
-    const uint32_t n    = msg->width * msg->height;
+    int x_offset = -1;
+    int y_offset = -1;
+    int z_offset = -1;
+
+    for (const auto & field : msg->fields) {
+      if (field.name == "x") {
+        x_offset = static_cast<int>(field.offset);
+      } else if (field.name == "y") {
+        y_offset = static_cast<int>(field.offset);
+      } else if (field.name == "z") {
+        z_offset = static_cast<int>(field.offset);
+      }
+    }
+
+    if (x_offset < 0 || y_offset < 0 || z_offset < 0) {
+      pub_->publish(*msg);
+      return;
+    }
+
+    geometry_msgs::msg::TransformStamped tf_msg;
+
+    try {
+      tf_msg = tf_buffer_.lookupTransform(
+        obstacle_frame,
+        msg->header.frame_id,
+        rclcpp::Time(0),
+        tf2::durationFromSec(0.05));
+    } catch (const tf2::TransformException & ex) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(),
+        *get_clock(),
+        5000,
+        "TF not ready, publishing unfiltered cloud: %s",
+        ex.what());
+
+      pub_->publish(*msg);
+      return;
+    }
+
+    tf2::Transform tf;
+    tf2::fromMsg(tf_msg.transform, tf);
+
+    const uint32_t point_step = msg->point_step;
+    const uint32_t n_points = msg->width * msg->height;
     const uint8_t * raw = msg->data.data();
 
     std::vector<uint8_t> kept;
-    kept.reserve(n * ps);
+    kept.reserve(n_points * point_step);
 
-    for (uint32_t i = 0; i < n; ++i) {
-      const uint8_t * base = raw + i * ps;
-      float px, py, pz = 0.0f;
-      std::memcpy(&px, base + x_off, sizeof(float));
-      std::memcpy(&py, base + y_off, sizeof(float));
-      if (z_off >= 0) {
-        std::memcpy(&pz, base + z_off, sizeof(float));
-      }
+    for (uint32_t i = 0; i < n_points; ++i) {
+      const uint8_t * base = raw + i * point_step;
 
-      bool inside = false;
-      for (const auto & o : obs_lidar) {
-        if (std::abs(px - o.x) <= o.hx &&
-            std::abs(py - o.y) <= o.hy &&
-            std::abs(pz - o.z) <= o.hz)
-        {
-          inside = true;
+      float px_lidar = 0.0f;
+      float py_lidar = 0.0f;
+      float pz_lidar = 0.0f;
+
+      std::memcpy(&px_lidar, base + x_offset, sizeof(float));
+      std::memcpy(&py_lidar, base + y_offset, sizeof(float));
+      std::memcpy(&pz_lidar, base + z_offset, sizeof(float));
+
+      tf2::Vector3 p_lidar(px_lidar, py_lidar, pz_lidar);
+      tf2::Vector3 p_obs_frame = tf * p_lidar;
+
+      const double px = p_obs_frame.x();
+      const double py = p_obs_frame.y();
+      const double pz = p_obs_frame.z();
+
+      bool inside_dynamic_obstacle = false;
+
+      for (const auto & obs : obstacles) {
+        const bool inside =
+          std::abs(px - obs.x) <= obs.hx &&
+          std::abs(py - obs.y) <= obs.hy &&
+          std::abs(pz - obs.z) <= obs.hz;
+
+        if (inside) {
+          inside_dynamic_obstacle = true;
           break;
         }
       }
-      if (!inside) {
-        kept.insert(kept.end(), base, base + ps);
+
+      if (!inside_dynamic_obstacle) {
+        kept.insert(kept.end(), base, base + point_step);
       }
     }
 
     sensor_msgs::msg::PointCloud2 out;
-    out.header       = msg->header;
-    out.height       = 1;
-    out.width        = static_cast<uint32_t>(kept.size() / ps);
-    out.fields       = msg->fields;
+    out.header = msg->header;
+    out.height = 1;
+    out.width = static_cast<uint32_t>(kept.size() / point_step);
+    out.fields = msg->fields;
     out.is_bigendian = msg->is_bigendian;
-    out.point_step   = ps;
-    out.row_step     = static_cast<uint32_t>(kept.size());
-    out.data         = std::move(kept);
-    out.is_dense     = false;
+    out.point_step = point_step;
+    out.row_step = static_cast<uint32_t>(kept.size());
+    out.data = std::move(kept);
+    out.is_dense = false;
+
     pub_->publish(out);
   }
 
@@ -185,13 +211,13 @@ private:
   rclcpp::Subscription<jo_msgs::msg::ObstacleArray>::SharedPtr obs_sub_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr lidar_sub_;
 
-  tf2_ros::Buffer            tf_buf_;
+  tf2_ros::Buffer tf_buffer_;
   tf2_ros::TransformListener tf_listener_;
 
-  std::mutex             mtx_;
-  std::vector<ObsBox>    obs_;
-  std::string            obs_frame_;
-  std::optional<rclcpp::Time> last_recv_;
+  std::mutex mutex_;
+  std::vector<ObsBox> latest_obstacles_;
+  std::string latest_frame_;
+  std::optional<rclcpp::Time> last_obstacles_time_;
 };
 
 int main(int argc, char ** argv)
@@ -199,4 +225,5 @@ int main(int argc, char ** argv)
   rclcpp::init(argc, argv);
   rclcpp::spin(std::make_shared<LidarDynamicFilter>());
   rclcpp::shutdown();
+  return 0;
 }
