@@ -2,7 +2,7 @@ ekf_filter_node:
   ros__parameters:
     # 60 Hz is too aggressive for the current sim/container load and causes
     # "Failed to meet update rate" warnings from robot_localization.
-    frequency: 30.0
+    frequency: 60.0
     two_d_mode: true
     publish_acceleration: true
     publish_tf: true

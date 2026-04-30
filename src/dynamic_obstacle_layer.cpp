@@ -249,36 +249,6 @@ public:
 
       markers.markers.push_back(physical_marker);
 
-      if (velocity_inflation > 0.0) {
-        visualization_msgs::msg::Marker prediction_marker;
-        prediction_marker.header.frame_id = global_frame_;
-        prediction_marker.header.stamp = clock_->now();
-        prediction_marker.ns = "dynamic_obstacle_velocity_inflation";
-        prediction_marker.id = marker_id++;
-        prediction_marker.type = visualization_msgs::msg::Marker::SPHERE;
-        prediction_marker.action = visualization_msgs::msg::Marker::ADD;
-
-        prediction_marker.pose.position.x =
-          ox + 0.5 * velocity_inflation * cos_h;
-        prediction_marker.pose.position.y =
-          oy + 0.5 * velocity_inflation * sin_h;
-        prediction_marker.pose.position.z = oz;
-        prediction_marker.pose.orientation.w = 1.0;
-
-        prediction_marker.scale.x = std::max(2.0 * hx_front, resolution);
-        prediction_marker.scale.y = std::max(2.0 * hy, resolution);
-        prediction_marker.scale.z = std::max(2.0 * hz, resolution);
-
-        prediction_marker.color.r = 1.0f;
-        prediction_marker.color.g = 0.3f;
-        prediction_marker.color.b = 0.0f;
-        prediction_marker.color.a = 0.25f;
-
-        prediction_marker.lifetime.sec = 0;
-        prediction_marker.lifetime.nanosec = 300000000;
-
-        markers.markers.push_back(prediction_marker);
-      }
     }
 
     if (marker_pub_) {
