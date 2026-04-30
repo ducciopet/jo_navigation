@@ -48,14 +48,18 @@ controller_server:
     FollowPath:
       plugin: nav2_graceful_controller::GracefulController
 
-      min_lookahead: 0.7
+      min_lookahead: 0.8
       max_lookahead: 2.6
 
-      initial_rotation: false
-      initial_rotation_threshold: 0.75
+      # Riattivato per favorire: ruota prima -> vai avanti,
+      # invece di usare subito la retromarcia.
+      initial_rotation: true
+      initial_rotation_threshold: 0.55
 
+      # Evita spin finali aggressivi per raggiungere yaw esatto.
       prefer_final_rotation: false
 
+      # Mantiene retromarcia disponibile, ma viene limitata dal velocity_smoother.
       allow_backward: true
 
       k_phi: 2.0
@@ -66,16 +70,16 @@ controller_server:
       v_linear_min: 0.05
       v_linear_max: 0.65
 
-      v_angular_max: 1.2
+      v_angular_max: 1.1
       v_angular_min_in_place: 0.10
 
-      slowdown_radius: 1.25
+      slowdown_radius: 1.4
 
       footprint_scaling_linear_vel: 0.3
       footprint_scaling_factor: 0.35
       footprint_scaling_step: 0.05
 
-      obstacle_cost_margin: 8
+      obstacle_cost_margin: 10
       final_rotation_search_step: 0.2
 
 
@@ -129,15 +133,22 @@ local_costmap:
         plugin: "jo_sim::DynamicObstacleLayer"
         enabled: True
 
-        obstacle_padding: 0.10
+        obstacle_padding: 0.15
         tracking_timeout: 1.0
 
-        velocity_inflation_k: 3.2
+        # Zona frontale molto lunga nella direzione della velocità.
+        velocity_inflation_k: 7.0
         velocity_inflation_min: 0.05
-        rear_inflation_k: 0.45
-        lateral_inflation_k: 0.65
-        dynamic_risk_cost: 230
-        dynamic_risk_min_cost: 45
+
+        # Dietro quasi libero, così il robot preferisce passare dalla parte posteriore.
+        rear_inflation_k: 0.05
+
+        # Allargamento laterale maggiore per evitare tagli troppo vicini.
+        lateral_inflation_k: 1.15
+
+        # Costi alti nella zona dinamica frontale.
+        dynamic_risk_cost: 252
+        dynamic_risk_min_cost: 120
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
@@ -191,15 +202,21 @@ global_costmap:
         plugin: "jo_sim::DynamicObstacleLayer"
         enabled: True
 
-        obstacle_padding: 0.10
+        obstacle_padding: 0.15
         tracking_timeout: 1.0
 
-        velocity_inflation_k: 3.2
+        # Più aggressivo nella global costmap, così il planner evita il fronte.
+        velocity_inflation_k: 7.5
         velocity_inflation_min: 0.05
-        rear_inflation_k: 0.45
-        lateral_inflation_k: 0.65
-        dynamic_risk_cost: 230
-        dynamic_risk_min_cost: 45
+
+        # Dietro quasi libero.
+        rear_inflation_k: 0.02
+
+        # Penalizzazione laterale alta per evitare traiettorie tangenti.
+        lateral_inflation_k: 1.20
+
+        dynamic_risk_cost: 252
+        dynamic_risk_min_cost: 140
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
@@ -316,8 +333,11 @@ velocity_smoother:
     scale_velocities: False
     feedback: "OPEN_LOOP"
 
+    # Moto frontale normale.
     max_velocity: [0.65, 0.0, 1.1]
-    min_velocity: [-0.26, 0.0, -1.0]
+
+    # Retromarcia mantenuta solo come emergenza.
+    min_velocity: [-0.06, 0.0, -1.0]
 
     max_accel: [1.5, 0.0, 2.4]
     max_decel: [-1.8, 0.0, -2.8]
@@ -328,8 +348,9 @@ velocity_smoother:
     deadband_velocity: [0.0, 0.0, 0.0]
     velocity_timeout: 1.0
 
+
 lidar_dynamic_filter:
   ros__parameters:
     use_sim_time: True
     tracking_timeout: 1.0
-    obstacle_padding: 0.10
+    obstacle_padding: 0.15
