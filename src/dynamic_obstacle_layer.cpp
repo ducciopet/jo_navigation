@@ -30,6 +30,10 @@ public:
     declareParameter("tracking_timeout", rclcpp::ParameterValue(1.0));
     declareParameter("velocity_inflation_k", rclcpp::ParameterValue(3.0));
     declareParameter("velocity_inflation_min", rclcpp::ParameterValue(0.05));
+    declareParameter("rear_inflation_k", rclcpp::ParameterValue(0.45));
+    declareParameter("lateral_inflation_k", rclcpp::ParameterValue(0.60));
+    declareParameter("dynamic_risk_cost", rclcpp::ParameterValue(230));
+    declareParameter("dynamic_risk_min_cost", rclcpp::ParameterValue(45));
 
     auto node = node_.lock();
 
@@ -39,6 +43,13 @@ public:
       node->get_parameter(name_ + ".tracking_timeout", tracking_timeout_);
       node->get_parameter(name_ + ".velocity_inflation_k", velocity_inflation_k_);
       node->get_parameter(name_ + ".velocity_inflation_min", velocity_inflation_min_);
+      node->get_parameter(name_ + ".rear_inflation_k", rear_inflation_k_);
+      node->get_parameter(name_ + ".lateral_inflation_k", lateral_inflation_k_);
+      node->get_parameter(name_ + ".dynamic_risk_cost", dynamic_risk_cost_);
+      node->get_parameter(name_ + ".dynamic_risk_min_cost", dynamic_risk_min_cost_);
+
+      dynamic_risk_min_cost_ = std::clamp(dynamic_risk_min_cost_, 1, 252);
+      dynamic_risk_cost_ = std::clamp(dynamic_risk_cost_, dynamic_risk_min_cost_, 252);
 
       clock_ = node->get_clock();
 
@@ -52,7 +63,7 @@ public:
         });
 
       marker_pub_ = node->create_publisher<visualization_msgs::msg::MarkerArray>(
-        "/dynamic_obstacle_footprints",
+        "dynamic_obstacle_footprints",
         rclcpp::QoS(1));
     }
 
@@ -115,9 +126,13 @@ public:
 
       const double velocity_inflation =
         speed > velocity_inflation_min_ ? speed * velocity_inflation_k_ : 0.0;
+      const double rear_inflation =
+        speed > velocity_inflation_min_ ? speed * rear_inflation_k_ : 0.0;
+      const double lateral_inflation =
+        speed > velocity_inflation_min_ ? speed * lateral_inflation_k_ : 0.0;
 
       const double radius =
-        std::max(hx + velocity_inflation, hy) + 0.20;
+        std::max(hx + velocity_inflation, hy + lateral_inflation) + rear_inflation + 0.20;
 
       current_bounds_.push_back({ox, oy, radius});
 
@@ -179,20 +194,27 @@ public:
 
       const double velocity_inflation =
         speed > velocity_inflation_min_ ? speed * velocity_inflation_k_ : 0.0;
+      const double rear_inflation =
+        speed > velocity_inflation_min_ ? speed * rear_inflation_k_ : 0.0;
+      const double lateral_inflation =
+        speed > velocity_inflation_min_ ? speed * lateral_inflation_k_ : 0.0;
 
       const double heading = std::atan2(vy, vx);
       const double cos_h = std::cos(heading);
       const double sin_h = std::sin(heading);
 
       const double hx_front = hx + velocity_inflation;
-      const double hx_back = hx;
+      const double hx_back = hx + rear_inflation;
+      const double hy_dynamic = hy + lateral_inflation;
 
       const double safe_hy = std::max(hy, resolution);
+      const double safe_hy_dynamic = std::max(hy_dynamic, resolution);
       const double safe_hx_front = std::max(hx_front, resolution);
       const double safe_hx_back = std::max(hx_back, resolution);
+      const double safe_hx = std::max(hx, resolution);
 
       const double search_radius =
-        std::max({safe_hx_front, safe_hx_back, safe_hy}) + resolution;
+        std::max({safe_hx_front, safe_hx_back, safe_hy_dynamic}) + resolution;
 
       for (double dx = -search_radius; dx <= search_radius; dx += resolution) {
         for (double dy = -search_radius; dy <= search_radius; dy += resolution) {
@@ -209,16 +231,30 @@ public:
           const double u = dx * cos_h + dy * sin_h;
           const double v = -dx * sin_h + dy * cos_h;
 
-          const double semi_u = u >= 0.0 ? safe_hx_front : safe_hx_back;
+          const double physical_eu = u / safe_hx;
+          const double physical_ev = v / safe_hy;
 
-          const double eu = u / semi_u;
-          const double ev = v / safe_hy;
-
-          if (eu * eu + ev * ev > 1.0) {
+          if (physical_eu * physical_eu + physical_ev * physical_ev <= 1.0) {
+            master_grid.setCost(mx, my, nav2_costmap_2d::LETHAL_OBSTACLE);
             continue;
           }
 
-          master_grid.setCost(mx, my, nav2_costmap_2d::LETHAL_OBSTACLE);
+          const double semi_u = u >= 0.0 ? safe_hx_front : safe_hx_back;
+          const double risk_eu = u / semi_u;
+          const double risk_ev = v / safe_hy_dynamic;
+          const double normalized_distance = risk_eu * risk_eu + risk_ev * risk_ev;
+
+          if (normalized_distance > 1.0) {
+            continue;
+          }
+
+          const double directional_bias = u >= 0.0 ? 1.0 : 0.35;
+          const double falloff = std::max(0.0, 1.0 - normalized_distance);
+          const int cost = dynamic_risk_min_cost_ +
+            static_cast<int>((dynamic_risk_cost_ - dynamic_risk_min_cost_) * falloff * directional_bias);
+
+          setMaxCost(master_grid, mx, my, static_cast<unsigned char>(
+            std::clamp(cost, dynamic_risk_min_cost_, dynamic_risk_cost_)));
         }
       }
 
@@ -248,6 +284,33 @@ public:
       physical_marker.lifetime.nanosec = 300000000;
 
       markers.markers.push_back(physical_marker);
+
+      visualization_msgs::msg::Marker risk_marker;
+      risk_marker.header.frame_id = global_frame_;
+      risk_marker.header.stamp = physical_marker.header.stamp;
+      risk_marker.ns = "dynamic_obstacle_predicted_risk";
+      risk_marker.id = marker_id++;
+      risk_marker.type = visualization_msgs::msg::Marker::SPHERE;
+      risk_marker.action = visualization_msgs::msg::Marker::ADD;
+
+      risk_marker.pose.position.x = ox + 0.5 * (velocity_inflation - rear_inflation) * cos_h;
+      risk_marker.pose.position.y = oy + 0.5 * (velocity_inflation - rear_inflation) * sin_h;
+      risk_marker.pose.position.z = oz;
+      risk_marker.pose.orientation.z = std::sin(heading * 0.5);
+      risk_marker.pose.orientation.w = std::cos(heading * 0.5);
+
+      risk_marker.scale.x = 2.0 * std::max(hx + 0.5 * (velocity_inflation + rear_inflation), resolution);
+      risk_marker.scale.y = 2.0 * safe_hy_dynamic;
+      risk_marker.scale.z = 0.05;
+
+      risk_marker.color.r = 1.0f;
+      risk_marker.color.g = 0.35f;
+      risk_marker.color.b = 0.0f;
+      risk_marker.color.a = 0.22f;
+
+      risk_marker.lifetime = physical_marker.lifetime;
+
+      markers.markers.push_back(risk_marker);
 
     }
 
@@ -288,6 +351,21 @@ private:
     marker_pub_->publish(markers);
   }
 
+  void setMaxCost(
+    nav2_costmap_2d::Costmap2D & master_grid,
+    const unsigned int mx,
+    const unsigned int my,
+    const unsigned char cost) const
+  {
+    const unsigned char old_cost = master_grid.getCost(mx, my);
+
+    if (old_cost == nav2_costmap_2d::LETHAL_OBSTACLE || old_cost >= cost) {
+      return;
+    }
+
+    master_grid.setCost(mx, my, cost);
+  }
+
   rclcpp::Subscription<jo_msgs::msg::ObstacleArray>::SharedPtr sub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
   rclcpp::Clock::SharedPtr clock_;
@@ -305,6 +383,10 @@ private:
   double tracking_timeout_{1.0};
   double velocity_inflation_k_{3.0};
   double velocity_inflation_min_{0.05};
+  double rear_inflation_k_{0.45};
+  double lateral_inflation_k_{0.60};
+  int dynamic_risk_cost_{230};
+  int dynamic_risk_min_cost_{45};
 
   std::vector<Bound> previous_bounds_;
   std::vector<Bound> current_bounds_;
