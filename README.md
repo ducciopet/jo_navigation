@@ -81,6 +81,23 @@ ros2 launch jo_navigation navigation_gps.launch.py rviz:=true
 This is a modified version of the local navigation configuration adapted to consume the `map` frame and the dual-EKF odometry sources.
 
 
+## Integration with onboard_detector
+
+The `onboard_detector` package provides real-time 3D dynamic obstacle detection and tracking. It depends on the localization stack in this package:
+
+- `onboard_detector` reads robot pose from `/odometry/filtered` (published by the local EKF node).
+- The detected dynamic obstacles (`/onboard_detector/dynamic_obstacles`) can be consumed by the Nav2 costmap via a custom layer or by a higher-level planner for dynamic avoidance.
+- If running the detector without the full navigation stack, use the `odom_pub:=true` launch argument to start the bundled `odometry_tf_publisher_node`, which re-publishes the EKF odometry as a `odom → base_link` TF.
+
+```bash
+# Run detector standalone (with its own odom TF publisher)
+ros2 launch onboard_detector run_detector.launch.py odom_pub:=true
+
+# Run detector alongside the navigation stack (EKF already provides odom TF)
+ros2 launch jo_navigation localization.launch.py
+ros2 launch onboard_detector run_detector.launch.py
+```
+
 ## Additional Resources
 
 - [Nav2 Documentation](https://navigation.ros.org/)
@@ -88,3 +105,4 @@ This is a modified version of the local navigation configuration adapted to cons
 - [ROS 2 TF2](https://docs.ros.org/en/jazzy/Concepts/Intermediate/About-Tf2.html)
 - [jo_sim](https://github.com/mlisi1/jo_sim.git)
 - [jo_zotac](https://github.com/mlisi1/jo-zotac.git)
+- [onboard_detector](../onboard_detector/README.md)
