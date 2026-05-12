@@ -7,6 +7,7 @@ from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
 )
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -28,6 +29,10 @@ def generate_launch_description():
     glim_config_arg = DeclareLaunchArgument(
         'glim_config', default_value=glim_config,
         description='Path to GLIM config folder')
+
+    rviz_arg = DeclareLaunchArgument(
+        'rviz', default_value='true',
+        description='Whether to launch RViz with the GLIM bbox config')
 
     # ── Relay bag topics to the names that visodom.launch.py expects ───────────
     # visodom reads: /front_camera/image, /front_camera/camera_info,
@@ -66,8 +71,6 @@ def generate_launch_description():
     )
 
     # ── GLIM: LiDAR-IMU odometry ───────────────────────────────────────────────
-    # lidar_dynamic_filter runs in passthrough mode until the detector is up,
-    # then starts filtering dynamic clusters from /velodyne_points_filtered.
     glim_node = Node(
         package='glim_ros',
         executable='glim_rosnode',
@@ -80,14 +83,6 @@ def generate_launch_description():
         ],
     )
 
-    lidar_dynamic_filter = Node(
-        package='jo_navigation',
-        executable='lidar_dynamic_filter',
-        output='screen',
-        emulate_tty=True,
-        parameters=[{'use_sim_time': LaunchConfiguration('use_sim_time')}],
-    )
-
     # ── Visual odometry (RTABMap) + EKF filter ─────────────────────────────────
     localization = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -98,16 +93,28 @@ def generate_launch_description():
         }.items(),
     )
 
+    # ── RViz: GLIM map + dynamic bbox visualization ───────────────────────────
+    rviz = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz_glim_bbox',
+        output='screen',
+        arguments=['-d', os.path.join(jo_sim_dir, 'rviz', 'glim_bbox.rviz')],
+        parameters=[{'use_sim_time': LaunchConfiguration('use_sim_time')}],
+        condition=IfCondition(LaunchConfiguration('rviz')),
+    )
+
     return LaunchDescription([
         use_sim_time_arg,
         glim_config_arg,
+        rviz_arg,
         # Camera topic relay (immediate, before visodom needs them)
         relay_image,
         relay_camera_info,
         relay_depth,
         # LiDAR-IMU odometry
         glim_node,
-        lidar_dynamic_filter,
         # Localization stack (visual odometry + EKF)
         localization,
+        rviz,
     ])

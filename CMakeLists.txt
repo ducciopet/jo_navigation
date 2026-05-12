@@ -12,13 +12,6 @@ find_package(nav2_costmap_2d REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(visualization_msgs REQUIRED)
 
-# ── lidar_dynamic_filter ──────────────────────────────────────────────────────
-add_executable(lidar_dynamic_filter
-  src/lidar_dynamic_filter.cpp)
-target_compile_features(lidar_dynamic_filter PUBLIC cxx_std_17)
-ament_target_dependencies(lidar_dynamic_filter
-  rclcpp sensor_msgs geometry_msgs jo_msgs tf2_ros tf2_geometry_msgs)
-
 # ── dynamic_obstacle_layer (costmap plugin) ───────────────────────────────────
 add_library(dynamic_obstacle_layer SHARED
   src/dynamic_obstacle_layer.cpp)
@@ -41,11 +34,6 @@ ament_python_install_package(scripts)
 
 install(
   PROGRAMS scripts/send_gps_waypoints.py
-  DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS
-  lidar_dynamic_filter
   DESTINATION lib/${PROJECT_NAME}
 )
 

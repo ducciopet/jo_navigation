@@ -28,8 +28,6 @@ def generate_launch_description():
     container_name_full = (namespace, '/', container_name)
     use_respawn = LaunchConfiguration('use_respawn')
     log_level = LaunchConfiguration('log_level')
-    filtered_lidar = LaunchConfiguration('filtered_lidar')
-
     lifecycle_nodes = [
         'controller_server',
         'smoother_server',
@@ -49,12 +47,6 @@ def generate_launch_description():
         'rviz',
         default_value='false',
         description='Whether to launch RViz'
-    )
-
-    declare_filtered_lidar_cmd = DeclareLaunchArgument(
-        'filtered_lidar',
-        default_value='false',
-        description='Whether to launch lidar_dynamic_filter from this launch file'
     )
 
     rviz_config = os.path.join(
@@ -136,15 +128,6 @@ def generate_launch_description():
         'log_level',
         default_value='info',
         description='Log level'
-    )
-
-    lidar_dynamic_filter = Node(
-        package='jo_navigation',
-        executable='lidar_dynamic_filter',
-        name='lidar_dynamic_filter',
-        output='screen',
-        parameters=[configured_params],
-        condition=IfCondition(filtered_lidar)
     )
 
     load_nodes = GroupAction(
@@ -331,7 +314,6 @@ def generate_launch_description():
 
     return LaunchDescription([
         rviz_arg,
-        declare_filtered_lidar_cmd,
 
         stdout_linebuf_envvar,
 
@@ -343,8 +325,6 @@ def generate_launch_description():
         declare_container_name_cmd,
         declare_use_respawn_cmd,
         declare_log_level_cmd,
-
-        lidar_dynamic_filter,
 
         load_nodes,
         load_composable_nodes,

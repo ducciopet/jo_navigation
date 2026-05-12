@@ -354,9 +354,3 @@ velocity_smoother:
     deadband_velocity: [0.0, 0.0, 0.0]
     velocity_timeout: 1.0
 
-
-lidar_dynamic_filter:
-  ros__parameters:
-    use_sim_time: True
-    tracking_timeout: 1.0
-    obstacle_padding: 0.15
