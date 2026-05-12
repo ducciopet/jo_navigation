@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -30,6 +31,9 @@ public:
     declareParameter("tracking_timeout", rclcpp::ParameterValue(1.0));
     declareParameter("velocity_inflation_k", rclcpp::ParameterValue(3.0));
     declareParameter("velocity_inflation_min", rclcpp::ParameterValue(0.05));
+    declareParameter("potentially_dynamic_inflation_min_track_age", rclcpp::ParameterValue(5));
+    declareParameter("static_inflation_min_track_age", rclcpp::ParameterValue(8));
+    declareParameter("static_inflation_min_speed", rclcpp::ParameterValue(0.20));
     declareParameter("rear_inflation_k", rclcpp::ParameterValue(0.45));
     declareParameter("lateral_inflation_k", rclcpp::ParameterValue(0.60));
     declareParameter("dynamic_risk_cost", rclcpp::ParameterValue(230));
@@ -43,6 +47,11 @@ public:
       node->get_parameter(name_ + ".tracking_timeout", tracking_timeout_);
       node->get_parameter(name_ + ".velocity_inflation_k", velocity_inflation_k_);
       node->get_parameter(name_ + ".velocity_inflation_min", velocity_inflation_min_);
+      node->get_parameter(
+        name_ + ".potentially_dynamic_inflation_min_track_age",
+        potentially_dynamic_inflation_min_track_age_);
+      node->get_parameter(name_ + ".static_inflation_min_track_age", static_inflation_min_track_age_);
+      node->get_parameter(name_ + ".static_inflation_min_speed", static_inflation_min_speed_);
       node->get_parameter(name_ + ".rear_inflation_k", rear_inflation_k_);
       node->get_parameter(name_ + ".lateral_inflation_k", lateral_inflation_k_);
       node->get_parameter(name_ + ".dynamic_risk_cost", dynamic_risk_cost_);
@@ -50,6 +59,10 @@ public:
 
       dynamic_risk_min_cost_ = std::clamp(dynamic_risk_min_cost_, 1, 252);
       dynamic_risk_cost_ = std::clamp(dynamic_risk_cost_, dynamic_risk_min_cost_, 252);
+      potentially_dynamic_inflation_min_track_age_ =
+        std::max(0, potentially_dynamic_inflation_min_track_age_);
+      static_inflation_min_track_age_ = std::max(0, static_inflation_min_track_age_);
+      static_inflation_min_speed_ = std::max(0.0, static_inflation_min_speed_);
 
       clock_ = node->get_clock();
 
@@ -123,13 +136,14 @@ public:
       const double vx = obs.twist.linear.x;
       const double vy = obs.twist.linear.y;
       const double speed = std::hypot(vx, vy);
+      const bool apply_velocity_inflation = shouldApplyVelocityInflation(obs, speed);
 
       const double velocity_inflation =
-        speed > velocity_inflation_min_ ? speed * velocity_inflation_k_ : 0.0;
+        apply_velocity_inflation ? speed * velocity_inflation_k_ : 0.0;
       const double rear_inflation =
-        speed > velocity_inflation_min_ ? speed * rear_inflation_k_ : 0.0;
+        apply_velocity_inflation ? speed * rear_inflation_k_ : 0.0;
       const double lateral_inflation =
-        speed > velocity_inflation_min_ ? speed * lateral_inflation_k_ : 0.0;
+        apply_velocity_inflation ? speed * lateral_inflation_k_ : 0.0;
 
       const double radius =
         std::max(hx + velocity_inflation, hy + lateral_inflation) + rear_inflation + 0.20;
@@ -184,6 +198,12 @@ public:
       const double oy = obs.pose.position.y;
       const double oz = obs.pose.position.z;
 
+      RCLCPP_DEBUG(
+        rclcpp::get_logger("DynamicObstacleLayer"),
+        "obstacle id=%u age=%u status=%u pos=(%.3f, %.3f, %.3f) size=(%.3f, %.3f) frame=%s",
+        obs.track_id, obs.track_age, obs.status,
+        ox, oy, oz, obs.size.x, obs.size.y, global_frame_.c_str());
+
       const double hx = obs.size.x * 0.5 + obstacle_padding_;
       const double hy = obs.size.y * 0.5 + obstacle_padding_;
       const double hz = obs.size.z * 0.5 + obstacle_padding_;
@@ -191,13 +211,14 @@ public:
       const double vx = obs.twist.linear.x;
       const double vy = obs.twist.linear.y;
       const double speed = std::hypot(vx, vy);
+      const bool apply_velocity_inflation = shouldApplyVelocityInflation(obs, speed);
 
       const double velocity_inflation =
-        speed > velocity_inflation_min_ ? speed * velocity_inflation_k_ : 0.0;
+        apply_velocity_inflation ? speed * velocity_inflation_k_ : 0.0;
       const double rear_inflation =
-        speed > velocity_inflation_min_ ? speed * rear_inflation_k_ : 0.0;
+        apply_velocity_inflation ? speed * rear_inflation_k_ : 0.0;
       const double lateral_inflation =
-        speed > velocity_inflation_min_ ? speed * lateral_inflation_k_ : 0.0;
+        apply_velocity_inflation ? speed * lateral_inflation_k_ : 0.0;
 
       const double heading = std::atan2(vy, vx);
       const double cos_h = std::cos(heading);
@@ -285,32 +306,35 @@ public:
 
       markers.markers.push_back(physical_marker);
 
-      visualization_msgs::msg::Marker risk_marker;
-      risk_marker.header.frame_id = global_frame_;
-      risk_marker.header.stamp = physical_marker.header.stamp;
-      risk_marker.ns = "dynamic_obstacle_predicted_risk";
-      risk_marker.id = marker_id++;
-      risk_marker.type = visualization_msgs::msg::Marker::SPHERE;
-      risk_marker.action = visualization_msgs::msg::Marker::ADD;
+      if (apply_velocity_inflation) {
+        visualization_msgs::msg::Marker risk_marker;
+        risk_marker.header.frame_id = global_frame_;
+        risk_marker.header.stamp = physical_marker.header.stamp;
+        risk_marker.ns = "dynamic_obstacle_predicted_risk";
+        risk_marker.id = marker_id++;
+        risk_marker.type = visualization_msgs::msg::Marker::SPHERE;
+        risk_marker.action = visualization_msgs::msg::Marker::ADD;
 
-      risk_marker.pose.position.x = ox + 0.5 * (velocity_inflation - rear_inflation) * cos_h;
-      risk_marker.pose.position.y = oy + 0.5 * (velocity_inflation - rear_inflation) * sin_h;
-      risk_marker.pose.position.z = oz;
-      risk_marker.pose.orientation.z = std::sin(heading * 0.5);
-      risk_marker.pose.orientation.w = std::cos(heading * 0.5);
+        risk_marker.pose.position.x = ox + 0.5 * (velocity_inflation - rear_inflation) * cos_h;
+        risk_marker.pose.position.y = oy + 0.5 * (velocity_inflation - rear_inflation) * sin_h;
+        risk_marker.pose.position.z = oz;
+        risk_marker.pose.orientation.z = std::sin(heading * 0.5);
+        risk_marker.pose.orientation.w = std::cos(heading * 0.5);
 
-      risk_marker.scale.x = 2.0 * std::max(hx + 0.5 * (velocity_inflation + rear_inflation), resolution);
-      risk_marker.scale.y = 2.0 * safe_hy_dynamic;
-      risk_marker.scale.z = 0.05;
+        risk_marker.scale.x =
+          2.0 * std::max(hx + 0.5 * (velocity_inflation + rear_inflation), resolution);
+        risk_marker.scale.y = 2.0 * safe_hy_dynamic;
+        risk_marker.scale.z = 0.05;
 
-      risk_marker.color.r = 1.0f;
-      risk_marker.color.g = 0.35f;
-      risk_marker.color.b = 0.0f;
-      risk_marker.color.a = 0.22f;
+        risk_marker.color.r = 1.0f;
+        risk_marker.color.g = 0.35f;
+        risk_marker.color.b = 0.0f;
+        risk_marker.color.a = 0.22f;
 
-      risk_marker.lifetime = physical_marker.lifetime;
+        risk_marker.lifetime = physical_marker.lifetime;
 
-      markers.markers.push_back(risk_marker);
+        markers.markers.push_back(risk_marker);
+      }
 
     }
 
@@ -351,6 +375,28 @@ private:
     marker_pub_->publish(markers);
   }
 
+  bool shouldApplyVelocityInflation(const jo_msgs::msg::Obstacle & obs, const double speed) const
+  {
+    if (speed <= velocity_inflation_min_) {
+      return false;
+    }
+
+    if (obs.status == jo_msgs::msg::Obstacle::STATUS_DYNAMIC) {
+      return true;
+    }
+
+    if (obs.status == jo_msgs::msg::Obstacle::STATUS_POTENTIALLY_DYNAMIC) {
+      return obs.track_age >= static_cast<uint32_t>(potentially_dynamic_inflation_min_track_age_);
+    }
+
+    if (obs.status == jo_msgs::msg::Obstacle::STATUS_STATIC) {
+      return obs.track_age >= static_cast<uint32_t>(static_inflation_min_track_age_) &&
+        speed >= static_inflation_min_speed_;
+    }
+
+    return false;
+  }
+
   void setMaxCost(
     nav2_costmap_2d::Costmap2D & master_grid,
     const unsigned int mx,
@@ -383,6 +429,9 @@ private:
   double tracking_timeout_{1.0};
   double velocity_inflation_k_{3.0};
   double velocity_inflation_min_{0.05};
+  int potentially_dynamic_inflation_min_track_age_{5};
+  int static_inflation_min_track_age_{8};
+  double static_inflation_min_speed_{0.20};
   double rear_inflation_k_{0.45};
   double lateral_inflation_k_{0.60};
   int dynamic_risk_cost_{230};

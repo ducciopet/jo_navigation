@@ -139,6 +139,9 @@ local_costmap:
         # Zona frontale molto lunga nella direzione della velocità.
         velocity_inflation_k: 7.0
         velocity_inflation_min: 0.05
+        potentially_dynamic_inflation_min_track_age: 5
+        static_inflation_min_track_age: 8
+        static_inflation_min_speed: 0.20
 
         # Dietro quasi libero, così il robot preferisce passare dalla parte posteriore.
         rear_inflation_k: 0.05
@@ -208,6 +211,9 @@ global_costmap:
         # Più aggressivo nella global costmap, così il planner evita il fronte.
         velocity_inflation_k: 7.5
         velocity_inflation_min: 0.05
+        potentially_dynamic_inflation_min_track_age: 5
+        static_inflation_min_track_age: 8
+        static_inflation_min_speed: 0.20
 
         # Dietro quasi libero.
         rear_inflation_k: 0.02
