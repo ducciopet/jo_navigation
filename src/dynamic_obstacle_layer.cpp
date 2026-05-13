@@ -30,14 +30,11 @@ public:
     declareParameter("obstacle_padding", rclcpp::ParameterValue(0.10));
     declareParameter("tracking_timeout", rclcpp::ParameterValue(1.0));
     declareParameter("velocity_inflation_k", rclcpp::ParameterValue(3.0));
-    declareParameter("velocity_inflation_min", rclcpp::ParameterValue(0.05));
-    declareParameter("potentially_dynamic_inflation_min_track_age", rclcpp::ParameterValue(5));
-    declareParameter("static_inflation_min_track_age", rclcpp::ParameterValue(8));
-    declareParameter("static_inflation_min_speed", rclcpp::ParameterValue(0.20));
     declareParameter("rear_inflation_k", rclcpp::ParameterValue(0.45));
     declareParameter("lateral_inflation_k", rclcpp::ParameterValue(0.60));
     declareParameter("dynamic_risk_cost", rclcpp::ParameterValue(230));
     declareParameter("dynamic_risk_min_cost", rclcpp::ParameterValue(45));
+    declareParameter("risk_velocity_threshold", rclcpp::ParameterValue(0.2));
 
     auto node = node_.lock();
 
@@ -46,23 +43,14 @@ public:
       node->get_parameter(name_ + ".obstacle_padding", obstacle_padding_);
       node->get_parameter(name_ + ".tracking_timeout", tracking_timeout_);
       node->get_parameter(name_ + ".velocity_inflation_k", velocity_inflation_k_);
-      node->get_parameter(name_ + ".velocity_inflation_min", velocity_inflation_min_);
-      node->get_parameter(
-        name_ + ".potentially_dynamic_inflation_min_track_age",
-        potentially_dynamic_inflation_min_track_age_);
-      node->get_parameter(name_ + ".static_inflation_min_track_age", static_inflation_min_track_age_);
-      node->get_parameter(name_ + ".static_inflation_min_speed", static_inflation_min_speed_);
       node->get_parameter(name_ + ".rear_inflation_k", rear_inflation_k_);
       node->get_parameter(name_ + ".lateral_inflation_k", lateral_inflation_k_);
       node->get_parameter(name_ + ".dynamic_risk_cost", dynamic_risk_cost_);
       node->get_parameter(name_ + ".dynamic_risk_min_cost", dynamic_risk_min_cost_);
+      node->get_parameter(name_ + ".risk_velocity_threshold", risk_velocity_threshold_);
 
       dynamic_risk_min_cost_ = std::clamp(dynamic_risk_min_cost_, 1, 252);
       dynamic_risk_cost_ = std::clamp(dynamic_risk_cost_, dynamic_risk_min_cost_, 252);
-      potentially_dynamic_inflation_min_track_age_ =
-        std::max(0, potentially_dynamic_inflation_min_track_age_);
-      static_inflation_min_track_age_ = std::max(0, static_inflation_min_track_age_);
-      static_inflation_min_speed_ = std::max(0.0, static_inflation_min_speed_);
 
       clock_ = node->get_clock();
 
@@ -136,7 +124,7 @@ public:
       const double vx = obs.twist.linear.x;
       const double vy = obs.twist.linear.y;
       const double speed = std::hypot(vx, vy);
-      const bool apply_velocity_inflation = shouldApplyVelocityInflation(obs, speed);
+      const bool apply_velocity_inflation = (speed > risk_velocity_threshold_);
 
       const double velocity_inflation =
         apply_velocity_inflation ? speed * velocity_inflation_k_ : 0.0;
@@ -211,7 +199,7 @@ public:
       const double vx = obs.twist.linear.x;
       const double vy = obs.twist.linear.y;
       const double speed = std::hypot(vx, vy);
-      const bool apply_velocity_inflation = shouldApplyVelocityInflation(obs, speed);
+      const bool apply_velocity_inflation = (speed > risk_velocity_threshold_);
 
       const double velocity_inflation =
         apply_velocity_inflation ? speed * velocity_inflation_k_ : 0.0;
@@ -252,10 +240,7 @@ public:
           const double u = dx * cos_h + dy * sin_h;
           const double v = -dx * sin_h + dy * cos_h;
 
-          const double physical_eu = u / safe_hx;
-          const double physical_ev = v / safe_hy;
-
-          if (physical_eu * physical_eu + physical_ev * physical_ev <= 1.0) {
+          if (std::abs(dx) <= safe_hx && std::abs(dy) <= safe_hy) {
             master_grid.setCost(mx, my, nav2_costmap_2d::LETHAL_OBSTACLE);
             continue;
           }
@@ -266,6 +251,10 @@ public:
           const double normalized_distance = risk_eu * risk_eu + risk_ev * risk_ev;
 
           if (normalized_distance > 1.0) {
+            continue;
+          }
+
+          if (!apply_velocity_inflation) {
             continue;
           }
 
@@ -375,28 +364,6 @@ private:
     marker_pub_->publish(markers);
   }
 
-  bool shouldApplyVelocityInflation(const jo_msgs::msg::Obstacle & obs, const double speed) const
-  {
-    if (speed <= velocity_inflation_min_) {
-      return false;
-    }
-
-    if (obs.status == jo_msgs::msg::Obstacle::STATUS_DYNAMIC) {
-      return true;
-    }
-
-    if (obs.status == jo_msgs::msg::Obstacle::STATUS_POTENTIALLY_DYNAMIC) {
-      return obs.track_age >= static_cast<uint32_t>(potentially_dynamic_inflation_min_track_age_);
-    }
-
-    if (obs.status == jo_msgs::msg::Obstacle::STATUS_STATIC) {
-      return obs.track_age >= static_cast<uint32_t>(static_inflation_min_track_age_) &&
-        speed >= static_inflation_min_speed_;
-    }
-
-    return false;
-  }
-
   void setMaxCost(
     nav2_costmap_2d::Costmap2D & master_grid,
     const unsigned int mx,
@@ -428,14 +395,11 @@ private:
   double obstacle_padding_{0.10};
   double tracking_timeout_{1.0};
   double velocity_inflation_k_{3.0};
-  double velocity_inflation_min_{0.05};
-  int potentially_dynamic_inflation_min_track_age_{5};
-  int static_inflation_min_track_age_{8};
-  double static_inflation_min_speed_{0.20};
   double rear_inflation_k_{0.45};
   double lateral_inflation_k_{0.60};
   int dynamic_risk_cost_{230};
   int dynamic_risk_min_cost_{45};
+  double risk_velocity_threshold_{0.2};
 
   std::vector<Bound> previous_bounds_;
   std::vector<Bound> current_bounds_;
