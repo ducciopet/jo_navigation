@@ -135,15 +135,19 @@ local_costmap:
 
         obstacle_padding: 0.15
         tracking_timeout: 1.0
+        use_glim_rejection_obstacles: True
+        glim_rejection_obstacles_topic: /glim_ros/rejection_obstacles
+        glim_rejection_timeout: 0.5
+        glim_rejection_velocity_scale: 0.75
 
         # Zona frontale molto lunga nella direzione della velocità.
-        velocity_inflation_k: 7.0
+        velocity_inflation_k: 4.0
 
         # Dietro quasi libero, così il robot preferisce passare dalla parte posteriore.
-        rear_inflation_k: 0.05
+        rear_inflation_k: 0.5
 
         # Allargamento laterale maggiore per evitare tagli troppo vicini.
-        lateral_inflation_k: 1.15
+        lateral_inflation_k: 0.2
 
         # Costi alti nella zona dinamica frontale.
         dynamic_risk_cost: 252
@@ -204,15 +208,19 @@ global_costmap:
 
         obstacle_padding: 0.15
         tracking_timeout: 1.0
+        use_glim_rejection_obstacles: True
+        glim_rejection_obstacles_topic: /glim_ros/rejection_obstacles
+        glim_rejection_timeout: 0.5
+        glim_rejection_velocity_scale: 0.75
 
         # Più aggressivo nella global costmap, così il planner evita il fronte.
-        velocity_inflation_k: 7.5
+        velocity_inflation_k: 4.0
 
         # Dietro quasi libero.
-        rear_inflation_k: 0.02
+        rear_inflation_k: 0.5
 
         # Penalizzazione laterale alta per evitare traiettorie tangenti.
-        lateral_inflation_k: 1.20
+        lateral_inflation_k: 0.20
 
         dynamic_risk_cost: 252
         dynamic_risk_min_cost: 140
@@ -347,4 +355,3 @@ velocity_smoother:
 
     deadband_velocity: [0.0, 0.0, 0.0]
     velocity_timeout: 1.0
-

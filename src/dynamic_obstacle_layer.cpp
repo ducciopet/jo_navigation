@@ -4,6 +4,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "jo_msgs/msg/obstacle_array.hpp"
@@ -35,6 +36,11 @@ public:
     declareParameter("dynamic_risk_cost", rclcpp::ParameterValue(230));
     declareParameter("dynamic_risk_min_cost", rclcpp::ParameterValue(45));
     declareParameter("risk_velocity_threshold", rclcpp::ParameterValue(0.2));
+    declareParameter("use_glim_rejection_obstacles", rclcpp::ParameterValue(true));
+    declareParameter("glim_rejection_obstacles_topic", rclcpp::ParameterValue(
+      "/glim_ros/rejection_obstacles"));
+    declareParameter("glim_rejection_timeout", rclcpp::ParameterValue(0.5));
+    declareParameter("glim_rejection_velocity_scale", rclcpp::ParameterValue(0.75));
 
     auto node = node_.lock();
 
@@ -48,6 +54,10 @@ public:
       node->get_parameter(name_ + ".dynamic_risk_cost", dynamic_risk_cost_);
       node->get_parameter(name_ + ".dynamic_risk_min_cost", dynamic_risk_min_cost_);
       node->get_parameter(name_ + ".risk_velocity_threshold", risk_velocity_threshold_);
+      node->get_parameter(name_ + ".use_glim_rejection_obstacles", use_glim_rejection_obstacles_);
+      node->get_parameter(name_ + ".glim_rejection_obstacles_topic", glim_rejection_obstacles_topic_);
+      node->get_parameter(name_ + ".glim_rejection_timeout", glim_rejection_timeout_);
+      node->get_parameter(name_ + ".glim_rejection_velocity_scale", glim_rejection_velocity_scale_);
 
       dynamic_risk_min_cost_ = std::clamp(dynamic_risk_min_cost_, 1, 252);
       dynamic_risk_cost_ = std::clamp(dynamic_risk_cost_, dynamic_risk_min_cost_, 252);
@@ -63,6 +73,17 @@ public:
           last_msg_time_ = clock_->now();
         });
 
+      if (use_glim_rejection_obstacles_) {
+        rejection_sub_ = node->create_subscription<jo_msgs::msg::ObstacleArray>(
+          glim_rejection_obstacles_topic_,
+          10,
+          [this](const jo_msgs::msg::ObstacleArray::SharedPtr msg) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            latest_rejection_msg_ = msg;
+            last_rejection_msg_time_ = clock_->now();
+          });
+      }
+
       marker_pub_ = node->create_publisher<visualization_msgs::msg::MarkerArray>(
         "dynamic_obstacle_footprints",
         rclcpp::QoS(1));
@@ -76,6 +97,7 @@ public:
   {
     std::lock_guard<std::mutex> lock(mutex_);
     latest_msg_.reset();
+    latest_rejection_msg_.reset();
     previous_bounds_.clear();
     current_bounds_.clear();
     current_ = true;
@@ -110,38 +132,61 @@ public:
 
     current_bounds_.clear();
 
-    if (!latest_msg_ || !isTrackingValidNoLock()) {
-      return;
+    std::unordered_set<uint32_t> onboard_track_ids;
+    if (latest_msg_ && isTrackingValidNoLock()) {
+      onboard_track_ids.reserve(latest_msg_->obstacles.size());
+      for (const auto & obs : latest_msg_->obstacles) {
+        onboard_track_ids.insert(obs.track_id);
+      }
     }
 
-    for (const auto & obs : latest_msg_->obstacles) {
-      const double ox = obs.pose.position.x;
-      const double oy = obs.pose.position.y;
+    auto update_bounds_from_msg = [&](
+      const jo_msgs::msg::ObstacleArray::SharedPtr & msg,
+      const bool from_rejection) {
+      if (!msg) {
+        return;
+      }
+      for (const auto & obs : msg->obstacles) {
+        if (from_rejection && onboard_track_ids.find(obs.track_id) != onboard_track_ids.end()) {
+          continue;
+        }
 
-      const double hx = obs.size.x * 0.5 + obstacle_padding_;
-      const double hy = obs.size.y * 0.5 + obstacle_padding_;
+        const double ox = obs.pose.position.x;
+        const double oy = obs.pose.position.y;
 
-      const double vx = obs.twist.linear.x;
-      const double vy = obs.twist.linear.y;
-      const double speed = std::hypot(vx, vy);
-      const bool apply_velocity_inflation = (speed > risk_velocity_threshold_);
+        const double hx = obs.size.x * 0.5 + obstacle_padding_;
+        const double hy = obs.size.y * 0.5 + obstacle_padding_;
 
-      const double velocity_inflation =
-        apply_velocity_inflation ? speed * velocity_inflation_k_ : 0.0;
-      const double rear_inflation =
-        apply_velocity_inflation ? speed * rear_inflation_k_ : 0.0;
-      const double lateral_inflation =
-        apply_velocity_inflation ? speed * lateral_inflation_k_ : 0.0;
+        const double vx = obs.twist.linear.x;
+        const double vy = obs.twist.linear.y;
+        const double speed = std::hypot(vx, vy);
+        const bool apply_velocity_inflation = (speed > risk_velocity_threshold_);
+        const double velocity_scale = from_rejection ? glim_rejection_velocity_scale_ : 1.0;
 
-      const double radius =
-        std::max(hx + velocity_inflation, hy + lateral_inflation) + rear_inflation + 0.20;
+        const double velocity_inflation =
+          apply_velocity_inflation ? speed * velocity_inflation_k_ * velocity_scale : 0.0;
+        const double rear_inflation =
+          apply_velocity_inflation ? speed * rear_inflation_k_ * velocity_scale : 0.0;
+        const double lateral_inflation =
+          apply_velocity_inflation ? speed * lateral_inflation_k_ * velocity_scale : 0.0;
 
-      current_bounds_.push_back({ox, oy, radius});
+        const double radius =
+          std::max(hx + velocity_inflation, hy + lateral_inflation) + rear_inflation + 0.20;
 
-      *min_x = std::min(*min_x, ox - radius);
-      *min_y = std::min(*min_y, oy - radius);
-      *max_x = std::max(*max_x, ox + radius);
-      *max_y = std::max(*max_y, oy + radius);
+        current_bounds_.push_back({ox, oy, radius});
+
+        *min_x = std::min(*min_x, ox - radius);
+        *min_y = std::min(*min_y, oy - radius);
+        *max_x = std::max(*max_x, ox + radius);
+        *max_y = std::max(*max_y, oy + radius);
+      }
+    };
+
+    if (latest_msg_ && isTrackingValidNoLock()) {
+      update_bounds_from_msg(latest_msg_, false);
+    }
+    if (latest_rejection_msg_ && isRejectionValidNoLock()) {
+      update_bounds_from_msg(latest_rejection_msg_, true);
     }
   }
 
@@ -156,22 +201,69 @@ public:
       return;
     }
 
-    jo_msgs::msg::ObstacleArray::SharedPtr msg;
+    struct LayerObstacle
+    {
+      jo_msgs::msg::Obstacle obs;
+      bool from_rejection;
+    };
+
+    std::vector<LayerObstacle> obstacles;
+    std::vector<Bound> old_bounds;
 
     {
       std::lock_guard<std::mutex> lock(mutex_);
 
+      old_bounds = previous_bounds_;
       previous_bounds_ = current_bounds_;
 
-      if (!latest_msg_ || !isTrackingValidNoLock()) {
-        publishClearMarkers();
-        return;
-      }
+      const bool onboard_valid = latest_msg_ && isTrackingValidNoLock();
+      const bool rejection_valid = latest_rejection_msg_ && isRejectionValidNoLock();
 
-      msg = latest_msg_;
+      if (onboard_valid) {
+        obstacles.reserve(latest_msg_->obstacles.size());
+        for (const auto & obs : latest_msg_->obstacles) {
+          obstacles.push_back({obs, false});
+        }
+      }
+      if (rejection_valid) {
+        std::unordered_set<uint32_t> onboard_track_ids;
+        onboard_track_ids.reserve(obstacles.size());
+        for (const auto & obstacle : obstacles) {
+          onboard_track_ids.insert(obstacle.obs.track_id);
+        }
+
+        for (const auto & obs : latest_rejection_msg_->obstacles) {
+          if (onboard_track_ids.find(obs.track_id) != onboard_track_ids.end()) {
+            continue;
+          }
+          obstacles.push_back({obs, true});
+        }
+      }
     }
 
     const double resolution = master_grid.getResolution();
+
+    // Clear costs written by this layer in the previous cycle.
+    // Skip LETHAL_OBSTACLE (254) cells — those belong to the VoxelLayer (static obstacles).
+    for (const auto & b : old_bounds) {
+      for (double dx = -b.r; dx <= b.r; dx += resolution) {
+        for (double dy = -b.r; dy <= b.r; dy += resolution) {
+          unsigned int mx = 0;
+          unsigned int my = 0;
+          if (!master_grid.worldToMap(b.x + dx, b.y + dy, mx, my)) {
+            continue;
+          }
+          if (master_grid.getCost(mx, my) != nav2_costmap_2d::LETHAL_OBSTACLE) {
+            master_grid.setCost(mx, my, nav2_costmap_2d::FREE_SPACE);
+          }
+        }
+      }
+    }
+
+    if (obstacles.empty()) {
+      publishClearMarkers();
+      return;
+    }
 
     visualization_msgs::msg::MarkerArray markers;
 
@@ -181,7 +273,10 @@ public:
 
     int marker_id = 0;
 
-    for (const auto & obs : msg->obstacles) {
+    for (const auto & obstacle : obstacles) {
+      const auto & obs = obstacle.obs;
+      const bool from_rejection = obstacle.from_rejection;
+
       const double ox = obs.pose.position.x;
       const double oy = obs.pose.position.y;
       const double oz = obs.pose.position.z;
@@ -200,13 +295,14 @@ public:
       const double vy = obs.twist.linear.y;
       const double speed = std::hypot(vx, vy);
       const bool apply_velocity_inflation = (speed > risk_velocity_threshold_);
+      const double velocity_scale = from_rejection ? glim_rejection_velocity_scale_ : 1.0;
 
       const double velocity_inflation =
-        apply_velocity_inflation ? speed * velocity_inflation_k_ : 0.0;
+        apply_velocity_inflation ? speed * velocity_inflation_k_ * velocity_scale : 0.0;
       const double rear_inflation =
-        apply_velocity_inflation ? speed * rear_inflation_k_ : 0.0;
+        apply_velocity_inflation ? speed * rear_inflation_k_ * velocity_scale : 0.0;
       const double lateral_inflation =
-        apply_velocity_inflation ? speed * lateral_inflation_k_ : 0.0;
+        apply_velocity_inflation ? speed * lateral_inflation_k_ * velocity_scale : 0.0;
 
       const double heading = std::atan2(vy, vx);
       const double cos_h = std::cos(heading);
@@ -241,7 +337,11 @@ public:
           const double v = -dx * sin_h + dy * cos_h;
 
           if (std::abs(dx) <= safe_hx && std::abs(dy) <= safe_hy) {
-            master_grid.setCost(mx, my, nav2_costmap_2d::LETHAL_OBSTACLE);
+            if (!from_rejection) {
+              master_grid.setCost(mx, my, nav2_costmap_2d::LETHAL_OBSTACLE);
+            } else {
+              setMaxCost(master_grid, mx, my, static_cast<unsigned char>(dynamic_risk_cost_));
+            }
             continue;
           }
 
@@ -349,6 +449,15 @@ private:
     return (clock_->now() - last_msg_time_).seconds() < tracking_timeout_;
   }
 
+  bool isRejectionValidNoLock() const
+  {
+    if (!clock_) {
+      return false;
+    }
+
+    return (clock_->now() - last_rejection_msg_time_).seconds() < glim_rejection_timeout_;
+  }
+
   void publishClearMarkers()
   {
     if (!marker_pub_) {
@@ -380,13 +489,16 @@ private:
   }
 
   rclcpp::Subscription<jo_msgs::msg::ObstacleArray>::SharedPtr sub_;
+  rclcpp::Subscription<jo_msgs::msg::ObstacleArray>::SharedPtr rejection_sub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
   rclcpp::Clock::SharedPtr clock_;
 
   std::mutex mutex_;
 
   jo_msgs::msg::ObstacleArray::SharedPtr latest_msg_;
+  jo_msgs::msg::ObstacleArray::SharedPtr latest_rejection_msg_;
   rclcpp::Time last_msg_time_{0, 0, RCL_ROS_TIME};
+  rclcpp::Time last_rejection_msg_time_{0, 0, RCL_ROS_TIME};
 
   std::string global_frame_{"odom"};
 
@@ -400,6 +512,10 @@ private:
   int dynamic_risk_cost_{230};
   int dynamic_risk_min_cost_{45};
   double risk_velocity_threshold_{0.2};
+  bool use_glim_rejection_obstacles_{true};
+  std::string glim_rejection_obstacles_topic_{"/glim_ros/rejection_obstacles"};
+  double glim_rejection_timeout_{0.5};
+  double glim_rejection_velocity_scale_{0.75};
 
   std::vector<Bound> previous_bounds_;
   std::vector<Bound> current_bounds_;
