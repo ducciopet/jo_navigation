@@ -150,6 +150,12 @@ public:
         if (from_rejection && onboard_track_ids.find(obs.track_id) != onboard_track_ids.end()) {
           continue;
         }
+        // Only inflate bounds for obstacles classified as dynamic or potentially dynamic.
+        // STATIC and TRACKED obstacles are not painted by this layer.
+        if (obs.status != jo_msgs::msg::Obstacle::STATUS_DYNAMIC &&
+            obs.status != jo_msgs::msg::Obstacle::STATUS_POTENTIALLY_DYNAMIC) {
+          continue;
+        }
 
         const double ox = obs.pose.position.x;
         const double oy = obs.pose.position.y;
@@ -276,6 +282,13 @@ public:
     for (const auto & obstacle : obstacles) {
       const auto & obs = obstacle.obs;
       const bool from_rejection = obstacle.from_rejection;
+
+      // Only paint obstacles classified as dynamic or potentially dynamic.
+      // STATIC and TRACKED obstacles (low velocity, not classified by detector) are skipped.
+      if (obs.status != jo_msgs::msg::Obstacle::STATUS_DYNAMIC &&
+          obs.status != jo_msgs::msg::Obstacle::STATUS_POTENTIALLY_DYNAMIC) {
+        continue;
+      }
 
       const double ox = obs.pose.position.x;
       const double oy = obs.pose.position.y;

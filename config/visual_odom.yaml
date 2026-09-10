@@ -4,6 +4,7 @@
     odom_frame_id:              odom
     publish_tf:                 false
     approx_sync:                true
+    approx_sync_max_interval:   0.02
     topic_queue_size:           20
     sync_queue_size:            20
     # image_transport:            "compressed"
@@ -33,6 +34,7 @@
     subscribe_depth:            true
     subscribe_scan_cloud:       false
     approx_sync:                true
+    approx_sync_max_interval:   0.02
     topic_queue_size:           20
     sync_queue_size:            20
     image_transport:            "compressed"
@@ -46,5 +48,6 @@
     subscribe_depth:            false
     subscribe_scan_cloud:       false
     approx_sync:                true
+    approx_sync_max_interval:   0.02
     image_transport:            "compressed"
     depth_transport:            "compressedDepth"

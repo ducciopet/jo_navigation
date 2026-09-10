@@ -103,7 +103,7 @@ local_costmap:
 
       robot_radius: 0.52
 
-      plugins: ["voxel_layer", "dynamic_obstacle_layer", "inflation_layer"]
+      plugins: ["voxel_layer", "dynamic_obstacle_layer",  "inflation_layer"]
 
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
@@ -141,7 +141,7 @@ local_costmap:
         glim_rejection_velocity_scale: 0.75
 
         # Zona frontale molto lunga nella direzione della velocità.
-        velocity_inflation_k: 4.0
+        velocity_inflation_k: 3.0
 
         # Dietro quasi libero, così il robot preferisce passare dalla parte posteriore.
         rear_inflation_k: 0.5
@@ -159,7 +159,7 @@ local_costmap:
         cost_scaling_factor: 3.0
         inflation_radius: 1.2
 
-      always_send_full_costmap: False
+      always_send_full_costmap: True 
 
 
 global_costmap:
@@ -214,13 +214,13 @@ global_costmap:
         glim_rejection_velocity_scale: 0.75
 
         # Più aggressivo nella global costmap, così il planner evita il fronte.
-        velocity_inflation_k: 4.0
+        velocity_inflation_k: 3.0
 
         # Dietro quasi libero.
         rear_inflation_k: 0.5
 
         # Penalizzazione laterale alta per evitare traiettorie tangenti.
-        lateral_inflation_k: 0.20
+        lateral_inflation_k: 0.2
 
         dynamic_risk_cost: 252
         dynamic_risk_min_cost: 140
@@ -231,7 +231,7 @@ global_costmap:
         cost_scaling_factor: 3.0
         inflation_radius: 1.2
 
-      always_send_full_costmap: False
+      always_send_full_costmap: True
 
 
 map_server:
