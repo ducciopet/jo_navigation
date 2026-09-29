@@ -13,6 +13,7 @@
     # Odometry tuning
     Odom/Strategy:              "0"       # Frame-to-Map (more robust)
     Odom/GuessMotion:           "true"    # use previous motion as initial guess
+    Odom/ResetCountdown:        "1"       # re-init right after tracking is lost instead of staying lost
     Odom/ImageDecimation:       "2"       # halve resolution before features → faster
     Vis/DepthAsMask:            "false"
     Vis/MaxFeatures:            "600"
@@ -30,15 +31,69 @@
 
 /visodom/rtabmap:
   ros__parameters:
-    frame_id:                   base_link
+    # Frames: odometry is read from the EKF's odom -> base_link TF (not from
+    # visodom/odom). rtabmap does NOT publish map -> odom, so it can run next
+    # to the GPS EKF, which owns that transform. Its outputs (grid, cloud,
+    # path) use a separate vslam_map frame so they're never mistaken for the
+    # GPS map. base_footprint is on the ground, so the Grid/* heights below
+    # are measured from the floor.
+    frame_id:                   base_footprint
     odom_frame_id:              odom
+    map_frame_id:               vslam_map
+    publish_tf:                 false
+    wait_for_transform:         0.2
+
+    # Inputs: front RGB-D for loop-closure detection, Velodyne for ICP refinement
+    subscribe_rgb:              true
     subscribe_depth:            true
-    subscribe_scan_cloud:       false
+    subscribe_scan_cloud:       true
     approx_sync:                true
-    topic_queue_size:           20
-    sync_queue_size:            20
+    approx_sync_max_interval:   0.05      # lidar 10 Hz vs camera 30 Hz
+    topic_queue_size:           30
+    sync_queue_size:            30
     image_transport:            "compressed"
     depth_transport:            "compressedDepth"
+    # database_path is set by the launch file (new file per run)
+
+    # Mapping mode
+    Mem/IncrementalMemory:      "true"
+    Mem/InitWMWithAllNodes:     "false"
+    Rtabmap/DetectionRate:      "1"       # Hz
+    RGBD/LinearUpdate:          "0.2"     # add a node every 20 cm ...
+    RGBD/AngularUpdate:         "0.1"     # ... or ~6 deg
+
+    # Registration: visual features find loop closures, lidar ICP refines them
+    Reg/Strategy:               "1"       # 1 = ICP
+    Reg/Force3DoF:              "true"    # ground robot: x, y, yaw
+    RGBD/NeighborLinkRefining:  "true"    # correct EKF odometry between nodes with ICP
+    RGBD/ProximityBySpace:      "true"
+    RGBD/ProximityPathMaxNeighbors: "10"
+    RGBD/OptimizeMaxError:      "3.0"     # reject loop closures that deform the graph
+    Vis/MinInliers:             "20"
+    Kp/MaxFeatures:             "500"
+
+    # ICP on VLP-16 clouds
+    Icp/VoxelSize:              "0.1"
+    Icp/PointToPlane:           "true"
+    Icp/PointToPlaneK:          "20"
+    Icp/PointToPlaneRadius:     "0"
+    Icp/PointToPlaneGroundNormalsUp: "0.8"
+    Icp/Iterations:             "10"
+    Icp/Epsilon:                "0.001"
+    Icp/MaxTranslation:         "3"
+    Icp/MaxCorrespondenceDistance: "1.0"
+    Icp/CorrespondenceRatio:    "0.2"
+    Icp/OutlierRatio:           "0.7"
+
+    # 2D occupancy grid (/visodom/map) from the lidar
+    Grid/Sensor:                "0"       # 0 = laser scan (scan_cloud)
+    Grid/3D:                    "false"
+    Grid/CellSize:              "0.05"
+    Grid/RangeMax:              "20"
+    Grid/NormalsSegmentation:   "false"
+    Grid/MaxGroundHeight:       "0.1"
+    Grid/MaxObstacleHeight:     "1.2"     # robot is ~1 m tall
+    Grid/RayTracing:            "true"
 
 
 /visodom/rtabmap_viz:

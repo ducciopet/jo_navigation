@@ -24,6 +24,13 @@ def generate_launch_description():
     )
 
 
+    launch_vslam_arg = DeclareLaunchArgument(
+        'vslam',
+        default_value='false',
+        description='Whether to launch RTAB-Map visual SLAM (mapping mode)'
+    )
+
+
     launch_visodom_arg = DeclareLaunchArgument(
         'visodom',
         default_value='true',
@@ -56,6 +63,7 @@ def generate_launch_description():
 
     visodom = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(visodom_launch),          
+        launch_arguments={'vslam': LaunchConfiguration('vslam')}.items(),
         condition=IfCondition(LaunchConfiguration('visodom'))
     )   
 
@@ -131,6 +139,7 @@ def generate_launch_description():
     return LaunchDescription([
         launch_glim_arg,
         launch_visodom_arg,
+        launch_vslam_arg,
         declare_params_file_cmd,
         declare_use_sim_time_cmd,
         robot_localization_global,
