@@ -1,0 +1,87 @@
+# GPS Waypoint Mission File
+# ─────────────────────────
+# Auto-generated from "prato_small.csv" by csv_to_mission.py.
+# Altitude source: ellipsoidal
+# Review the point order below and edit the "mission" list to match
+# the desired visiting order before running the robot.
+
+points:
+  wp1:
+    lat: 43.86225649
+    lon: 11.12428426
+    alt: 95.288
+
+  wp2:
+    lat: 43.86224324
+    lon: 11.12434631
+    alt: 95.320
+
+  wp3:
+    lat: 43.86223027
+    lon: 11.12441180
+    alt: 95.356
+
+  wp4:
+    lat: 43.86221405
+    lon: 11.12448687
+    alt: 95.401
+
+  wp5:
+    lat: 43.86219803
+    lon: 11.12456407
+    alt: 95.510
+
+  wp6:
+    lat: 43.86217694
+    lon: 11.12465412
+    alt: 95.541
+
+  wp7:
+    lat: 43.86215605
+    lon: 11.12475606
+    alt: 95.578
+
+  wp8:
+    lat: 43.86213879
+    lon: 11.12484581
+    alt: 95.593
+
+  wp9:
+    lat: 43.86211684
+    lon: 11.12494502
+    alt: 95.620
+
+  wp10:
+    lat: 43.86209713
+    lon: 11.12503569
+    alt: 95.593
+
+  wp11:
+    lat: 43.86207809
+    lon: 11.12512708
+    alt: 95.545
+
+  wp12:
+    lat: 43.86206143
+    lon: 11.12520491
+    alt: 95.530
+
+  wp13:
+    lat: 43.86204445
+    lon: 11.12528348
+    alt: 95.509
+
+mission:
+  # - wp1
+  - wp2
+  - wp3
+  - wp4
+  - wp5
+  - wp6
+  - wp7
+  - wp8
+  # - wp9
+  # - wp10
+  # - wp11
+  # - wp12
+  # - wp13

@@ -1,0 +1,111 @@
+# GPS Waypoint Mission File
+# ─────────────────────────
+# Auto-generated from "giro_parchino.csv" by csv_to_mission.py.
+# Altitude source: ellipsoidal
+# Review the point order below and edit the "mission" list to match
+# the desired visiting order before running the robot.
+
+points:
+  wp1:
+    lat: 43.68492323
+    lon: 10.48793219
+    alt: 51.200
+
+  wp2:
+    lat: 43.68490992
+    lon: 10.48798182
+    alt: 51.163
+
+  wp3:
+    lat: 43.68485464
+    lon: 10.48795508
+    alt: 51.175
+
+  wp4:
+    lat: 43.68480893
+    lon: 10.48793155
+    alt: 51.168
+
+  wp5:
+    lat: 43.68477129
+    lon: 10.48790641
+    alt: 51.099
+
+  wp6:
+    lat: 43.68479669
+    lon: 10.48785710
+    alt: 51.242
+
+  wp7:
+    lat: 43.68484963
+    lon: 10.48790005
+    alt: 51.145
+
+  wp8:
+    lat: 43.68489614
+    lon: 10.48786807
+    alt: 51.176
+
+  wp9:
+    lat: 43.68495584
+    lon: 10.48789658
+    alt: 51.173
+
+  wp10:
+    lat: 43.68501046
+    lon: 10.48791315
+    alt: 51.110
+
+  wp11:
+    lat: 43.68506175
+    lon: 10.48794446
+    alt: 51.119
+
+  wp12:
+    lat: 43.68510523
+    lon: 10.48797666
+    alt: 51.147
+
+  wp13:
+    lat: 43.68507919
+    lon: 10.48801056
+    alt: 51.165
+
+  wp14:
+    lat: 43.68503330
+    lon: 10.48798954
+    alt: 51.181
+
+  wp15:
+    lat: 43.68498226
+    lon: 10.48796431
+    alt: 51.230
+
+  wp16:
+    lat: 43.68496606
+    lon: 10.48790375
+    alt: 51.224
+
+  wp17:
+    lat: 43.68493465
+    lon: 10.48789078
+    alt: 51.267
+
+mission:
+  - wp1
+  - wp2
+  - wp3
+  - wp4
+  - wp5
+  - wp6
+  - wp7
+  - wp8
+  - wp9
+  - wp10
+  - wp11
+  - wp12
+  - wp13
+  - wp14
+  - wp15
+  - wp16
+  - wp17

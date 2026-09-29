@@ -1,0 +1,51 @@
+# GPS Waypoint Mission File
+# ─────────────────────────
+# Auto-generated from "transetto_cross_park.csv" by csv_to_mission.py.
+# Altitude source: ellipsoidal
+# Review the point order below and edit the "mission" list to match
+# the desired visiting order before running the robot.
+
+points:
+  wp1:
+    lat: 43.68507827
+    lon: 10.48707489
+    alt: 51.080
+
+  wp2:
+    lat: 43.68506557
+    lon: 10.48713865
+    alt: 51.127
+
+  wp3:
+    lat: 43.68505148
+    lon: 10.48722848
+    alt: 51.149
+
+  wp4:
+    lat: 43.68503416
+    lon: 10.48733156
+    alt: 51.120
+
+  wp5:
+    lat: 43.68501866
+    lon: 10.48741829
+    alt: 51.110
+
+  wp6:
+    lat: 43.68500214
+    lon: 10.48752162
+    alt: 51.129
+
+  wp7:
+    lat: 43.68497832
+    lon: 10.48765801
+    alt: 51.160
+
+mission:
+  # - wp1
+  - wp2
+  - wp3
+  - wp4
+  - wp5
+  - wp6
+  - wp7
