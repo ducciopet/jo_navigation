@@ -1,14 +1,41 @@
 import os
+import re
+import shutil
 
 from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch.actions import TimerAction, ExecuteProcess, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+
+
+def glim_config_path(context, glim_config):
+    """GLIM config dir to use; without the standard viewer if glim_view is false.
+
+    The viewer (libstandard_viewer.so) needs a display: if the X connection to
+    the remote PC drops, it closes and takes GLIM down with it. GLIM has no
+    parameter to skip an extension module, so for glim_view:=false we copy the
+    config dir to /tmp and remove the module from the copy's config_ros.json.
+    """
+    if LaunchConfiguration('glim_view').perform(context).lower() in ('true', '1'):
+        return glim_config
+    headless = '/tmp/glim_config_headless'
+    shutil.rmtree(headless, ignore_errors=True)
+    shutil.copytree(glim_config, headless)
+    ros_json = os.path.join(headless, 'config_ros.json')
+    with open(ros_json) as f:
+        text = f.read()
+    # Drop the entry together with the comma that separates it from a neighbour
+    stripped = re.sub(r'"libstandard_viewer\.so"\s*,', '', text, count=1)
+    if stripped == text:
+        stripped = re.sub(r',(\s*)"libstandard_viewer\.so"', r'\1', text, count=1)
+    with open(ros_json, 'w') as f:
+        f.write(stripped)
+    return headless
 
 
 def generate_launch_description():
@@ -28,6 +55,13 @@ def generate_launch_description():
         'vslam',
         default_value='false',
         description='Whether to launch RTAB-Map visual SLAM (mapping mode)'
+    )
+
+
+    launch_glim_view_arg = DeclareLaunchArgument(
+        'glim_view',
+        default_value='false',
+        description='Whether to open the GLIM viewer window (needs a display; GLIM dies if it is lost)'
     )
 
 
@@ -70,18 +104,23 @@ def generate_launch_description():
 
 
     # NODES
-    glim = Node(
-        package='glim_ros',
-        executable='glim_rosnode',
-        output='screen',
-        emulate_tty=True,
+    def launch_glim(context):
+        return [Node(
+            package='glim_ros',
+            executable='glim_rosnode',
+            output='screen',
+            emulate_tty=True,
+            additional_env={
+                '__NV_PRIME_RENDER_OFFLOAD': '0',
+            },
+            parameters=[
+                {'config_path': glim_config_path(context, glim_config)},
+                ],
+        )]
+
+    glim = OpaqueFunction(
+        function=launch_glim,
         condition=IfCondition(LaunchConfiguration('glim')),
-        additional_env={
-            '__NV_PRIME_RENDER_OFFLOAD': '0',
-        },
-        parameters=[
-            {'config_path': glim_config},
-            ],
     )
 
     
@@ -138,6 +177,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         launch_glim_arg,
+        launch_glim_view_arg,
         launch_visodom_arg,
         launch_vslam_arg,
         declare_params_file_cmd,
