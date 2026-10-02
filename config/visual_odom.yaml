@@ -7,8 +7,9 @@
     approx_sync_max_interval:   0.02
     topic_queue_size:           20
     sync_queue_size:            20
-    # image_transport:            "compressed"
-    # depth_transport:            "compressedDepth"
+    # image_transport/depth_transport are set from visodom.launch.py's own
+    # image_transport/depth_transport launch args instead (only when not
+    # 'raw' — see that file), so they're intentionally left unset here.
 
     # Odometry tuning
     Odom/Strategy:              "0"       # Frame-to-Map (more robust)
@@ -38,7 +39,7 @@
     topic_queue_size:           20
     sync_queue_size:            20
     image_transport:            "compressed"
-    depth_transport:            "compressedDepth"
+    depth_transport:            "zstd"      # bags/*_validation_lab only records aligned_depth_to_color as zstd, not compressedDepth
 
 
 /visodom/rtabmap_viz:
@@ -50,4 +51,4 @@
     approx_sync:                true
     approx_sync_max_interval:   0.02
     image_transport:            "compressed"
-    depth_transport:            "compressedDepth"
+    depth_transport:            "zstd"      # bags/*_validation_lab only records aligned_depth_to_color as zstd, not compressedDepth
